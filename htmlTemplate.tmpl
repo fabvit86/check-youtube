@@ -1,0 +1,20 @@
+<head>
+	<meta charset="utf-8">
+	<title>CheckYoutube</title>
+	<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<p><strong>Account:</strong> {{ .Username }}</p>
+<p><strong># of channels with new videos:</strong> {{ .YTChannels | len }}</p>
+<table>
+    <thead>
+        <th>Channel</th><th>Lastest Video</th>
+    </thead>
+    <tbody>
+        {{ range .YTChannels }}
+        <tr>
+            <td><a href="{{ .URL }}" target=”_blank”>{{ .Title }}</a></td>
+            <td><a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a></td>
+        </tr>
+        {{ end }}
+    </tbody>
+</table>
