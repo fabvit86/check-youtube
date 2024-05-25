@@ -27,6 +27,7 @@ func main() {
 	http.HandleFunc("/login", auth.Login)
 	http.HandleFunc("/landing", auth.Oauth2Redirect)
 	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification)
+	http.HandleFunc("/switch-account", auth.SwitchAccount)
 	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
 
 	log.Println(fmt.Sprintf("listening on port %s...", port))

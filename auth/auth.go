@@ -80,3 +80,12 @@ func getToken(code string) error {
 	log.Println("user successfully authenticated")
 	return nil
 }
+
+// SwitchAccount redirect the user to select an account
+func SwitchAccount(w http.ResponseWriter, r *http.Request) {
+	promptAccountSelect := oauth2.SetAuthURLParam("prompt", "select_account")
+	url := oauth2Config.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(oauth2Verifier), promptAccountSelect)
+
+	// redirect to the Google's auth url
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+}
