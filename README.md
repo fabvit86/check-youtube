@@ -21,3 +21,10 @@ Set the following env variables:
 - OAUTH_LANDING_PAGE: The oauth2 landing page, e.g.: http://localhost:8900/landing
 
 Running the code will start the web server. User should go to http://localhost:<SERVER_PORT>/login to login using Google, the server will then redirect the user to the main application page.
+
+The repo contains a Dockerfile, so it's also possible to build a container and run it with Docker. 
+For example, supposing to use a .env file to pass environmental variables and use 8900 as SERVER_PORT:
+```
+docker build -t check-youtube:0.0.1 .
+docker run -p 8900:8900 --env-file .env --name=check-youtube -d check-youtube:0.0.1
+```
