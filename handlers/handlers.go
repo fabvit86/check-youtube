@@ -10,7 +10,6 @@ import (
 	"html/template"
 	"log"
 	"net/http"
-	"os"
 )
 
 var svc *youtube.Service
@@ -71,34 +70,36 @@ func InitPeopleService(oauth2Config oauth2.Config, token *oauth2.Token) error {
 }
 
 // GetYoutubeChannelsVideosNotification call YouTube API to check for new videos
-func GetYoutubeChannelsVideosNotification(w http.ResponseWriter, r *http.Request) {
-	if svc == nil || peopleSvc == nil {
-		// redirect to login page
-		log.Println("services not initialized, redirecting user to login page")
-		http.Redirect(w, r, fmt.Sprintf("http://localhost:%s/login", os.Getenv("SERVER_PORT")), http.StatusTemporaryRedirect)
-		return
-	}
+func GetYoutubeChannelsVideosNotification(port string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if svc == nil || peopleSvc == nil {
+			// redirect to login page
+			log.Println("services not initialized, redirecting user to login page")
+			http.Redirect(w, r, fmt.Sprintf("http://localhost:%s/login", port), http.StatusTemporaryRedirect)
+			return
+		}
 
-	// get user info using the Google People API
-	username := getLoggedUserinfo(peopleSvc)
+		// get user info using the Google People API
+		username := getLoggedUserinfo(peopleSvc)
 
-	// get YouTube subscriptions info
-	ytChannels := checkYoutube(svc)
+		// get YouTube subscriptions info
+		ytChannels := checkYoutube(svc)
 
-	response := templateResponse{
-		YTChannels: ytChannels,
-		Username:   username,
-	}
+		response := templateResponse{
+			YTChannels: ytChannels,
+			Username:   username,
+		}
 
-	// render response as HTML using a template
-	templateFile := "htmlTemplate.tmpl"
-	tmpl, err := template.New(templateFile).ParseFiles(templateFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	err = tmpl.Execute(w, response)
-	if err != nil {
-		log.Fatal(err)
+		// render response as HTML using a template
+		templateFile := "htmlTemplate.tmpl"
+		tmpl, err := template.New(templateFile).ParseFiles(templateFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		err = tmpl.Execute(w, response)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 

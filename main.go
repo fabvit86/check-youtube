@@ -3,13 +3,12 @@ package main
 import (
 	"checkYoutube/auth"
 	"checkYoutube/handlers"
+	"checkYoutube/utils"
 	"embed"
 	_ "embed"
 	"fmt"
-	"github.com/joho/godotenv"
 	"log"
 	"net/http"
-	"os"
 )
 
 //go:embed static
@@ -17,16 +16,24 @@ var staticContent embed.FS
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
-	err := godotenv.Load()
+	port := utils.GetEnvOrFallback("SERVER_PORT", "8900")
+	clientID, err := utils.GetEnvOrErr("CLIENT_ID")
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal(err)
 	}
-	port := os.Getenv("SERVER_PORT")
+	clientSecret, err := utils.GetEnvOrErr("CLIENT_SECRET")
+	if err != nil {
+		log.Fatal(err)
+	}
+	RedirectURL, err := utils.GetEnvOrErr("OAUTH_LANDING_PAGE")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// serve endpoints
-	http.HandleFunc("/login", auth.Login)
-	http.HandleFunc("/landing", auth.Oauth2Redirect)
-	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification)
+	http.HandleFunc("/login", auth.Login(clientID, clientSecret, RedirectURL))
+	http.HandleFunc("/landing", auth.Oauth2Redirect(port))
+	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification(port))
 	http.HandleFunc("/switch-account", auth.SwitchAccount)
 	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
 

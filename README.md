@@ -14,10 +14,10 @@ The code is not intended to be well polished or production-ready, and it's just 
 - enable the People API and YouTube Data API v3	through the Google API Console.
 
 ### Usage
-Create a .env file with the following env variables:
+Set the following env variables:
 - CLIENT_ID: The oauth2 client_id of the application
 - CLIENT_SECRET: The oauth2 client_secret of the application
-- SERVER_PORT: The server port, e.g.: 8900
+- SERVER_PORT: The server port, default to 8900
 - OAUTH_LANDING_PAGE: The oauth2 landing page, e.g.: http://localhost:8900/landing
 
 Running the code will start the web server. User should go to http://localhost:<SERVER_PORT>/login to login using Google, the server will then redirect the user to the main application page.
