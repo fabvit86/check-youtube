@@ -70,7 +70,7 @@ func InitPeopleService(oauth2Config oauth2.Config, token *oauth2.Token) error {
 }
 
 // GetYoutubeChannelsVideosNotification call YouTube API to check for new videos
-func GetYoutubeChannelsVideosNotification(port string) http.HandlerFunc {
+func GetYoutubeChannelsVideosNotification(port, htmlTemplate string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if svc == nil || peopleSvc == nil {
 			// redirect to login page
@@ -91,8 +91,7 @@ func GetYoutubeChannelsVideosNotification(port string) http.HandlerFunc {
 		}
 
 		// render response as HTML using a template
-		templateFile := "htmlTemplate.tmpl"
-		tmpl, err := template.New(templateFile).ParseFiles(templateFile)
+		tmpl, err := template.New("htmlTemplate.tmpl").Parse(htmlTemplate)
 		if err != nil {
 			log.Fatal(err)
 		}
