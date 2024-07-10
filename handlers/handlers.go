@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"golang.org/x/oauth2"
@@ -10,6 +11,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"slices"
 	"sync"
 )
 
@@ -143,6 +145,11 @@ func checkYoutube(svc *youtube.Service) []YTChannel {
 	if len(response) == 0 {
 		log.Println("no new video published by user's YouTube channels")
 	}
+
+	// sort results by title
+	slices.SortFunc(response, func(a, b YTChannel) int {
+		return cmp.Compare(a.Title, b.Title)
+	})
 
 	return response
 }
