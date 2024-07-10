@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sync"
 )
 
 var svc *youtube.Service
@@ -119,42 +120,19 @@ func checkYoutube(svc *youtube.Service) []YTChannel {
 		Mine(true).
 		MaxResults(50).
 		Pages(ctx, func(subs *youtube.SubscriptionListResponse) error {
-			// print channels having published new videos
+			// collect channels having published new videos
+			wg := &sync.WaitGroup{}
+			var mutex sync.Mutex
 			for _, item := range subs.Items {
 				newItems := item.ContentDetails.NewItemCount
 				if newItems > 0 {
-					channelTitle := item.Snippet.Title
-					channelID := item.Snippet.ResourceId.ChannelId
-					responseItem := YTChannel{
-						Title: channelTitle,
-						URL:   fmt.Sprintf("https://www.youtube.com/channel/%s/videos", channelID),
-					}
-
-					// the playlist ID can be obtained by changing the second letter of the channel ID
-					playlistIDRunes := []rune(channelID)
-					playlistIDRunes[1] = 'U'
-					playlistID := string(playlistIDRunes)
-
-					// get latest video info from the first playlist item
-					playlistItemsResponse, err := svc.PlaylistItems.
-						List([]string{"snippet"}).
-						PlaylistId(playlistID).
-						MaxResults(1).
-						Do()
-					if err != nil {
-						log.Println(fmt.Sprintf("error retrieving latest YouTube video for channel %s: %v", channelTitle, err))
-					} else if len(playlistItemsResponse.Items) > 0 {
-						playlistItemItem := playlistItemsResponse.Items[0]
-						responseItem.LatestVideoURL = fmt.Sprintf("https://www.youtube.com/watch?v=%s", playlistItemItem.Snippet.ResourceId.VideoId)
-						responseItem.LatestVideoTitle = playlistItemItem.Snippet.Title
-					}
-
-					response = append(response, responseItem)
-					log.Println(fmt.Sprintf("channel %s published new videos", channelTitle))
+					wg.Add(1)
+					go processYouTubeChannel(item, &response, &mutex, wg)
 				} else {
 					break
 				}
 			}
+			wg.Wait()
 			return nil
 		})
 	if err != nil {
@@ -185,4 +163,39 @@ func getLoggedUserinfo(svc *people.Service) string {
 	}
 
 	return ""
+}
+
+// check a subscription for new videos and add it to the list
+func processYouTubeChannel(item *youtube.Subscription, ytChannels *[]YTChannel, mutex *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
+	channelTitle := item.Snippet.Title
+	channelID := item.Snippet.ResourceId.ChannelId
+	responseItem := YTChannel{
+		Title: channelTitle,
+		URL:   fmt.Sprintf("https://www.youtube.com/channel/%s/videos", channelID),
+	}
+
+	// the playlist ID can be obtained by changing the second letter of the channel ID
+	playlistIDRunes := []rune(channelID)
+	playlistIDRunes[1] = 'U'
+	playlistID := string(playlistIDRunes)
+
+	// get latest video info from the first playlist item
+	playlistItemsResponse, err := svc.PlaylistItems.
+		List([]string{"snippet"}).
+		PlaylistId(playlistID).
+		MaxResults(1).
+		Do()
+	if err != nil {
+		log.Println(fmt.Sprintf("error retrieving latest YouTube video for channel %s: %v", channelTitle, err))
+	} else if len(playlistItemsResponse.Items) > 0 {
+		playlistItemItem := playlistItemsResponse.Items[0]
+		responseItem.LatestVideoURL = fmt.Sprintf("https://www.youtube.com/watch?v=%s", playlistItemItem.Snippet.ResourceId.VideoId)
+		responseItem.LatestVideoTitle = playlistItemItem.Snippet.Title
+	}
+
+	mutex.Lock()
+	*ytChannels = append(*ytChannels, responseItem)
+	mutex.Unlock()
+	log.Println(fmt.Sprintf("channel %s published new videos", channelTitle))
 }
