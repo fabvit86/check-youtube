@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -148,7 +149,7 @@ func checkYoutube(svc *youtube.Service) []YTChannel {
 
 	// sort results by title
 	slices.SortFunc(response, func(a, b YTChannel) int {
-		return cmp.Compare(a.Title, b.Title)
+		return cmp.Compare(strings.ToLower(a.Title), strings.ToLower(b.Title))
 	})
 
 	return response
