@@ -6,11 +6,13 @@
         callURL = async (url) => {
         	try {
         	    const trID = event.target.closest("tr").id;
-                const response = await fetch("{{ .ServerBasepath }}" + "/mark-as-viewed", {
+        	    let totVids = Number(document.getElementById("tot-channels").textContent);
+        	    const response = await fetch("{{ .ServerBasepath }}" + "/mark-as-viewed", {
                     method: 'POST',
                     body: JSON.stringify({url: url})
                 });
                 document.getElementById(trID).remove();
+                document.getElementById("tot-channels").textContent=totVids-1;
             } catch (e) {
           	    console.log(e);
           	    return e;
@@ -19,7 +21,7 @@
     </script>
 </head>
 <p><strong>Account:</strong> {{ .Username }}&nbsp;&nbsp;&nbsp;<a href="/switch-account">use a different account</a></p>
-<p><strong># of channels with new videos:</strong> {{ .YTChannels | len }}</p>
+<p><strong># of channels with new videos:</strong> <span id="tot-channels">{{ .YTChannels | len }}</span></p>
 <table>
     <thead>
         <th>Channel</th><th>Lastest Video</th><th>Mark as viewed</th>
