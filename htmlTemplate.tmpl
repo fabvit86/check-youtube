@@ -2,18 +2,34 @@
 	<meta charset="utf-8">
 	<title>CheckYoutube</title>
 	<link rel="stylesheet" href="/static/css/style.css">
+    <script>
+        callURL = async (url) => {
+        	try {
+        	    const trID = event.target.closest("tr").id;
+                const response = await fetch("{{ .ServerBasepath }}" + "/mark-as-viewed", {
+                    method: 'POST',
+                    body: JSON.stringify({url: url})
+                });
+                document.getElementById(trID).remove();
+            } catch (e) {
+          	    console.log(e);
+          	    return e;
+            }
+        }
+    </script>
 </head>
 <p><strong>Account:</strong> {{ .Username }}&nbsp;&nbsp;&nbsp;<a href="/switch-account">use a different account</a></p>
 <p><strong># of channels with new videos:</strong> {{ .YTChannels | len }}</p>
 <table>
     <thead>
-        <th>Channel</th><th>Lastest Video</th>
+        <th>Channel</th><th>Lastest Video</th><th>Mark as viewed</th>
     </thead>
     <tbody>
-        {{ range .YTChannels }}
-        <tr>
+        {{ range $index, $value := .YTChannels }}
+        <tr id="tr-{{ $index }}">
             <td><a href="{{ .URL }}" target=”_blank”>{{ .Title }}</a></td>
             <td><a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a></td>
+            <td><button class="mark-as-viewed" onclick="callURL('{{ .URL }}');">Mark as viewed</button></td>
         </tr>
         {{ end }}
     </tbody>

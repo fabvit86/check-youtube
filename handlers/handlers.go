@@ -3,8 +3,8 @@ package handlers
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
-	"golang.org/x/oauth2"
 	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/youtube/v3"
@@ -18,6 +18,14 @@ import (
 
 var svc *youtube.Service
 var peopleSvc *people.Service
+var Client *http.Client
+
+type ServiceType int
+
+const (
+	YoutubeService ServiceType = iota
+	PeopleService  ServiceType = iota
+)
 
 type YTChannel struct {
 	Title            string
@@ -27,46 +35,39 @@ type YTChannel struct {
 }
 
 type templateResponse struct {
-	YTChannels []YTChannel
-	Username   string
+	YTChannels     []YTChannel
+	Username       string
+	ServerBasepath string
 }
 
-// InitYoutubeService create a YouTube service using the given oauth2 token
-func InitYoutubeService(oauth2Config oauth2.Config, token *oauth2.Token) error {
+// InitService creates a service of the given type using the global http client
+func InitService(serviceType ServiceType) error {
 	ctx := context.Background()
 
-	// get an HTTP client from the token
-	client := oauth2Config.Client(ctx, token)
-
-	// create YouTube service
-	var err error
-	svc, err = youtube.NewService(
-		ctx,
-		option.WithHTTPClient(client),
-	)
-	if err != nil {
-		log.Println(fmt.Sprintf("unable to create YouTube service: %v", err))
-		return err
+	if Client == nil {
+		return fmt.Errorf("error: http client not initialized")
 	}
 
-	return nil
-}
-
-// InitPeopleService create a Google People service using the given oauth2 token
-func InitPeopleService(oauth2Config oauth2.Config, token *oauth2.Token) error {
-	ctx := context.Background()
-
-	// get an HTTP client from the token
-	client := oauth2Config.Client(ctx, token)
-
-	// create YouTube service
+	// create service
 	var err error
-	peopleSvc, err = people.NewService(
-		ctx,
-		option.WithHTTPClient(client),
-	)
+	switch serviceType {
+	case YoutubeService:
+		svc, err = youtube.NewService(
+			ctx,
+			option.WithHTTPClient(Client),
+		)
+	case PeopleService:
+		peopleSvc, err = people.NewService(
+			ctx,
+			option.WithHTTPClient(Client),
+		)
+	default:
+		err = fmt.Errorf("unknown service type: %v", serviceType)
+		log.Println(err)
+		return err
+	}
 	if err != nil {
-		log.Println(fmt.Sprintf("unable to create People service: %v", err))
+		log.Println(fmt.Sprintf("unable to create %v service: %v", serviceType, err))
 		return err
 	}
 
@@ -76,10 +77,11 @@ func InitPeopleService(oauth2Config oauth2.Config, token *oauth2.Token) error {
 // GetYoutubeChannelsVideosNotification call YouTube API to check for new videos
 func GetYoutubeChannelsVideosNotification(port, htmlTemplate string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		serverBasepath := fmt.Sprintf("http://localhost:%s", port)
 		if svc == nil || peopleSvc == nil {
 			// redirect to login page
 			log.Println("services not initialized, redirecting user to login page")
-			http.Redirect(w, r, fmt.Sprintf("http://localhost:%s/login", port), http.StatusTemporaryRedirect)
+			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
 			return
 		}
 
@@ -90,8 +92,9 @@ func GetYoutubeChannelsVideosNotification(port, htmlTemplate string) http.Handle
 		ytChannels := checkYoutube(svc)
 
 		response := templateResponse{
-			YTChannels: ytChannels,
-			Username:   username,
+			YTChannels:     ytChannels,
+			Username:       username,
+			ServerBasepath: serverBasepath,
 		}
 
 		// render response as HTML using a template
@@ -206,4 +209,28 @@ func processYouTubeChannel(item *youtube.Subscription, ytChannels *[]YTChannel, 
 	*ytChannels = append(*ytChannels, responseItem)
 	mutex.Unlock()
 	log.Println(fmt.Sprintf("channel %s published new videos", channelTitle))
+}
+
+// MarkAsViewed visits a subscription channel in the background to clear the notification of new videos
+func MarkAsViewed(w http.ResponseWriter, r *http.Request) {
+	type request struct {
+		URL string `json:"url"`
+	}
+
+	var req request
+	dec := json.NewDecoder(r.Body)
+	err := dec.Decode(&req)
+	if err != nil {
+		log.Println(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// visit the channel to mark its videos as viewed
+	_, err = Client.Get(req.URL)
+	if err != nil {
+		log.Println(fmt.Sprintf("markAsViewed get request failed, error: %v", err))
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }

@@ -66,15 +66,21 @@ func getToken(code string) error {
 		return err
 	}
 
+	// init http client
+	if handlers.Client == nil {
+		client := oauth2Config.Client(ctx, token)
+		handlers.Client = client
+	}
+
 	// init YouTube service
-	err = handlers.InitYoutubeService(oauth2Config, token)
+	err = handlers.InitService(handlers.YoutubeService)
 	if err != nil {
 		log.Println(fmt.Sprintf("failed to init YouTube service, error: %v", err))
 		return err
 	}
 
 	// init Google People service
-	err = handlers.InitPeopleService(oauth2Config, token)
+	err = handlers.InitService(handlers.PeopleService)
 	if err != nil {
 		log.Println(fmt.Sprintf("failed to init People service, error: %v", err))
 		return err
