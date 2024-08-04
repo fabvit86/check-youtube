@@ -67,10 +67,8 @@ func getToken(code string) error {
 	}
 
 	// init http client
-	if handlers.Client == nil {
-		client := oauth2Config.Client(ctx, token)
-		handlers.Client = client
-	}
+	client := oauth2Config.Client(ctx, token)
+	handlers.Client = client
 
 	// init YouTube service
 	err = handlers.InitService(handlers.YoutubeService)
