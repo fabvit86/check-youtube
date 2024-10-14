@@ -128,12 +128,14 @@ func checkYoutube(svc *youtube.Service) []YTChannel {
 		Pages(ctx, func(subs *youtube.SubscriptionListResponse) error {
 			// collect channels having published new videos
 			wg := &sync.WaitGroup{}
-			var mutex sync.Mutex
 			for _, item := range subs.Items {
 				newItems := item.ContentDetails.NewItemCount
 				if newItems > 0 {
 					wg.Add(1)
-					go processYouTubeChannel(item, &response, &mutex, wg)
+					go func(item *youtube.Subscription) {
+						defer wg.Done()
+						response = append(response, processYouTubeChannel(item))
+					}(item)
 				} else {
 					break
 				}
@@ -177,8 +179,7 @@ func getLoggedUserinfo(svc *people.Service) string {
 }
 
 // check a subscription for new videos and add it to the list
-func processYouTubeChannel(item *youtube.Subscription, ytChannels *[]YTChannel, mutex *sync.Mutex, wg *sync.WaitGroup) {
-	defer wg.Done()
+func processYouTubeChannel(item *youtube.Subscription) YTChannel {
 	channelTitle := item.Snippet.Title
 	channelID := item.Snippet.ResourceId.ChannelId
 	responseItem := YTChannel{
@@ -205,10 +206,8 @@ func processYouTubeChannel(item *youtube.Subscription, ytChannels *[]YTChannel, 
 		responseItem.LatestVideoTitle = playlistItemItem.Snippet.Title
 	}
 
-	mutex.Lock()
-	*ytChannels = append(*ytChannels, responseItem)
-	mutex.Unlock()
 	log.Println(fmt.Sprintf("channel %s published new videos", channelTitle))
+	return responseItem
 }
 
 // MarkAsViewed visits a subscription channel in the background to clear the notification of new videos
