@@ -77,7 +77,9 @@ func InitService(serviceType ServiceType) error {
 // GetYoutubeChannelsVideosNotification call YouTube API to check for new videos
 func GetYoutubeChannelsVideosNotification(port, htmlTemplate string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		filtered := r.URL.Query().Get("filtered") == "true"
 		serverBasepath := fmt.Sprintf("http://localhost:%s", port)
+
 		if svc == nil || peopleSvc == nil {
 			// redirect to login page
 			log.Println("services not initialized, redirecting user to login page")
@@ -89,7 +91,7 @@ func GetYoutubeChannelsVideosNotification(port, htmlTemplate string) http.Handle
 		username := getLoggedUserinfo(peopleSvc)
 
 		// get YouTube subscriptions info
-		ytChannels := checkYoutube(svc)
+		ytChannels := checkYoutube(svc, filtered)
 
 		response := templateResponse{
 			YTChannels:     ytChannels,
@@ -110,7 +112,7 @@ func GetYoutubeChannelsVideosNotification(port, htmlTemplate string) http.Handle
 }
 
 // call YouTube API to check for new videos
-func checkYoutube(svc *youtube.Service) []YTChannel {
+func checkYoutube(svc *youtube.Service, filtered bool) []YTChannel {
 	response := make([]YTChannel, 0)
 	ctx := context.Background()
 
@@ -130,7 +132,7 @@ func checkYoutube(svc *youtube.Service) []YTChannel {
 			wg := &sync.WaitGroup{}
 			for _, item := range subs.Items {
 				newItems := item.ContentDetails.NewItemCount
-				if newItems > 0 {
+				if !filtered || newItems > 0 {
 					wg.Add(1)
 					go func(item *youtube.Subscription) {
 						defer wg.Done()

@@ -2,37 +2,31 @@
 	<meta charset="utf-8">
 	<title>CheckYoutube</title>
 	<link rel="stylesheet" href="/static/css/style.css">
-    <script>
-        callURL = async (url) => {
-        	try {
-        	    const trID = event.target.closest("tr").id;
-        	    let totVids = Number(document.getElementById("tot-channels").textContent);
-        	    const response = await fetch("{{ .ServerBasepath }}" + "/mark-as-viewed", {
-                    method: 'POST',
-                    body: JSON.stringify({url: url})
-                });
-                document.getElementById(trID).remove();
-                document.getElementById("tot-channels").textContent=totVids-1;
-            } catch (e) {
-          	    console.log(e);
-          	    return e;
-            }
-        }
-    </script>
+    <script type="text/javascript" src="/static/js/script.js"></script>
 </head>
+<body onload="jsScript()">
 <p><strong>Account:</strong> {{ .Username }}&nbsp;&nbsp;&nbsp;<a href="/switch-account">use a different account</a></p>
-<p><strong># of channels with new videos:</strong> <span id="tot-channels">{{ .YTChannels | len }}</span></p>
+<p><strong><span id="channels-info-span"># of channels with new videos:</span></strong> <span id="tot-channels">{{ .YTChannels | len }}</span></p>
+<div id="filters-div">
+    <div class="btn" id="show-all-btn">SHOW ALL</div>
+    <div class="btn" id="show-filtered-btn">FILTERED</div>
+</div>
+<div id="content-div">
 <table>
     <thead>
-        <th>Channel</th><th>Lastest Video</th><th>Mark as viewed</th>
+        <tr><th>Channel</th><th>Lastest Video</th><th class="mark-as-viewed">Mark as viewed</th></tr>
     </thead>
     <tbody>
         {{ range $index, $value := .YTChannels }}
         <tr id="tr-{{ $index }}">
             <td><a href="{{ .URL }}" target=”_blank”>{{ .Title }}</a></td>
             <td><a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a></td>
-            <td><button class="mark-as-viewed" onclick="callURL('{{ .URL }}');">Mark as viewed</button></td>
+            <td class="mark-as-viewed">
+                <button class="mark-as-viewed" onclick="callURL('{{ .URL }}', '{{ $.ServerBasepath }}');">Mark as viewed</button>
+            </td>
         </tr>
         {{ end }}
     </tbody>
 </table>
+</div>
+</body>

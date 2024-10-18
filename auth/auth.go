@@ -51,7 +51,7 @@ func Oauth2Redirect(port string) http.HandlerFunc {
 		}
 
 		// redirect to YouTube check endpoint
-		http.Redirect(w, r, fmt.Sprintf("http://localhost:%s/check-youtube", port), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("http://localhost:%s/check-youtube?filtered=true", port), http.StatusSeeOther)
 	}
 }
 
