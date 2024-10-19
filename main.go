@@ -33,8 +33,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// init oauth2 config
+	auth.InitOauth2Config(clientID, clientSecret, RedirectURL)
+
 	// serve endpoints
-	http.HandleFunc("/login", auth.Login(clientID, clientSecret, RedirectURL))
+	http.HandleFunc("/login", auth.Login)
 	http.HandleFunc("/landing", auth.Oauth2Redirect(port))
 	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification(port, string(htmlTemplate)))
 	http.HandleFunc("/switch-account", auth.SwitchAccount)

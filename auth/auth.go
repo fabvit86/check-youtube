@@ -13,28 +13,42 @@ import (
 	"net/http"
 )
 
-var oauth2Config oauth2.Config
-var oauth2Verifier string
+type oauth2Config struct {
+	configurer     Oauth2ConfigProvider
+	oauth2Verifier string
+}
+
+// package-shared singleton
+var oauth2C *oauth2Config
+
+// InitOauth2Config initializes the oauth2 config as singleton
+func InitOauth2Config(clientID, clientSecret, redirectURL string) {
+	if oauth2C == nil {
+		oauth2C = &oauth2Config{
+			configurer: &oauth2ConfigInstance{
+				oauth2Config: oauth2.Config{
+					ClientID:     clientID,
+					ClientSecret: clientSecret,
+					Endpoint:     google.Endpoint,
+					RedirectURL:  redirectURL,
+					Scopes:       []string{youtube.YoutubeScope, people.UserinfoProfileScope},
+				},
+			},
+		}
+	}
+}
 
 // Login oauth2 login
-func Login(clientID, clientSecret, redirectURL string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// oauth authentication
-		oauth2Config = oauth2.Config{
-			ClientID:     clientID,
-			ClientSecret: clientSecret,
-			Endpoint:     google.Endpoint,
-			RedirectURL:  redirectURL,
-			Scopes:       []string{youtube.YoutubeScope, people.UserinfoProfileScope},
-		}
-		oauth2Verifier = oauth2.GenerateVerifier()
+func Login(w http.ResponseWriter, r *http.Request) {
+	// generate and store oauth code verifier
+	oauth2C.oauth2Verifier = oauth2C.configurer.generateVerifier()
 
-		// get auth url for user's authentication
-		url := oauth2Config.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(oauth2Verifier))
+	// get auth url for user's authentication
+	url := oauth2C.configurer.generateAuthURL("state", oauth2.AccessTypeOffline,
+		oauth2.S256ChallengeOption(oauth2C.oauth2Verifier))
 
-		// redirect to the Google's auth url
-		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
-	}
+	// redirect to the Google's auth url
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
 // Oauth2Redirect oauth2 redirect landing endpoint
@@ -60,15 +74,14 @@ func getToken(code string) error {
 	ctx := context.Background()
 
 	// get the token
-	token, err := oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(oauth2Verifier))
+	token, err := oauth2C.configurer.exchangeCodeWithToken(ctx, code, oauth2.VerifierOption(oauth2C.oauth2Verifier))
 	if err != nil {
-		log.Println(fmt.Sprintf("failed to retrieve auth token, error: %v", err))
+		log.Println(fmt.Sprintf("failed to exchange auth code with token, error: %v", err))
 		return err
 	}
 
 	// init http client
-	client := oauth2Config.Client(ctx, token)
-	handlers.Client = client
+	handlers.Client = oauth2C.configurer.createHTTPClient(ctx, token)
 
 	// init YouTube service
 	err = handlers.InitService(handlers.YoutubeService)
@@ -91,7 +104,8 @@ func getToken(code string) error {
 // SwitchAccount redirect the user to select an account
 func SwitchAccount(w http.ResponseWriter, r *http.Request) {
 	promptAccountSelect := oauth2.SetAuthURLParam("prompt", "select_account")
-	url := oauth2Config.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(oauth2Verifier), promptAccountSelect)
+	url := oauth2C.configurer.generateAuthURL("state", oauth2.AccessTypeOffline,
+		oauth2.S256ChallengeOption(oauth2C.oauth2Verifier), promptAccountSelect)
 
 	// redirect to the Google's auth url
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
