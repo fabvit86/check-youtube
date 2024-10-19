@@ -11,6 +11,7 @@ import (
 	"google.golang.org/api/youtube/v3"
 	"log"
 	"net/http"
+	"sync"
 )
 
 type oauth2Config struct {
@@ -20,10 +21,11 @@ type oauth2Config struct {
 
 // package-shared singleton
 var oauth2C *oauth2Config
+var once sync.Once
 
 // InitOauth2Config initializes the oauth2 config as singleton
 func InitOauth2Config(clientID, clientSecret, redirectURL string) {
-	if oauth2C == nil {
+	once.Do(func() {
 		oauth2C = &oauth2Config{
 			configurer: &oauth2ConfigInstance{
 				oauth2Config: oauth2.Config{
@@ -35,7 +37,7 @@ func InitOauth2Config(clientID, clientSecret, redirectURL string) {
 				},
 			},
 		}
-	}
+	})
 }
 
 // Login oauth2 login
