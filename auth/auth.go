@@ -15,7 +15,7 @@ import (
 )
 
 type oauth2Config struct {
-	configurer     Oauth2ConfigProvider
+	provider       Oauth2ConfigProvider
 	oauth2Verifier string
 }
 
@@ -27,7 +27,7 @@ var once sync.Once
 func InitOauth2Config(clientID, clientSecret, redirectURL string) {
 	once.Do(func() {
 		oauth2C = &oauth2Config{
-			configurer: &oauth2ConfigInstance{
+			provider: &oauth2ConfigInstance{
 				oauth2Config: oauth2.Config{
 					ClientID:     clientID,
 					ClientSecret: clientSecret,
@@ -43,10 +43,10 @@ func InitOauth2Config(clientID, clientSecret, redirectURL string) {
 // Login oauth2 login
 func Login(w http.ResponseWriter, r *http.Request) {
 	// generate and store oauth code verifier
-	oauth2C.oauth2Verifier = oauth2C.configurer.generateVerifier()
+	oauth2C.oauth2Verifier = oauth2C.provider.generateVerifier()
 
 	// get auth url for user's authentication
-	url := oauth2C.configurer.generateAuthURL("state", oauth2.AccessTypeOffline,
+	url := oauth2C.provider.generateAuthURL("state", oauth2.AccessTypeOffline,
 		oauth2.S256ChallengeOption(oauth2C.oauth2Verifier))
 
 	// redirect to the Google's auth url
@@ -76,14 +76,14 @@ func getToken(code string) error {
 	ctx := context.Background()
 
 	// get the token
-	token, err := oauth2C.configurer.exchangeCodeWithToken(ctx, code, oauth2.VerifierOption(oauth2C.oauth2Verifier))
+	token, err := oauth2C.provider.exchangeCodeWithToken(ctx, code, oauth2.VerifierOption(oauth2C.oauth2Verifier))
 	if err != nil {
 		log.Println(fmt.Sprintf("failed to exchange auth code with token, error: %v", err))
 		return err
 	}
 
 	// init http client
-	handlers.Client = oauth2C.configurer.createHTTPClient(ctx, token)
+	handlers.Client = oauth2C.provider.createHTTPClient(ctx, token)
 
 	// init YouTube service
 	err = handlers.InitService(handlers.YoutubeService)
@@ -106,7 +106,7 @@ func getToken(code string) error {
 // SwitchAccount redirect the user to select an account
 func SwitchAccount(w http.ResponseWriter, r *http.Request) {
 	promptAccountSelect := oauth2.SetAuthURLParam("prompt", "select_account")
-	url := oauth2C.configurer.generateAuthURL("state", oauth2.AccessTypeOffline,
+	url := oauth2C.provider.generateAuthURL("state", oauth2.AccessTypeOffline,
 		oauth2.S256ChallengeOption(oauth2C.oauth2Verifier), promptAccountSelect)
 
 	// redirect to the Google's auth url
