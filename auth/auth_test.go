@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"checkYoutube/testing_utils"
 	"context"
 	"golang.org/x/oauth2"
 	"net/http"
@@ -17,8 +18,8 @@ func (o *oauth2Mock) generateVerifier() string {
 func (o *oauth2Mock) generateAuthURL(string, ...oauth2.AuthCodeOption) string {
 	return "mockURL"
 }
-func (o *oauth2Mock) exchangeCodeWithToken(context.Context, string, ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
-	return &oauth2.Token{}, nil
+func (o *oauth2Mock) exchangeCodeWithTokenSource(context.Context, string, ...oauth2.AuthCodeOption) (oauth2.TokenSource, error) {
+	return &testing_utils.TokenSourceMock{}, nil
 }
 func (o *oauth2Mock) createHTTPClient(context.Context, *oauth2.Token) *http.Client {
 	return &http.Client{}
@@ -58,7 +59,7 @@ func TestInitOauth2Config(t *testing.T) {
 			if oauth2C == nil {
 				t.Errorf("InitOauth2Config() - oauth2C is nil, want not nil")
 			}
-			if oauth2C.provider == nil {
+			if oauth2C.Oauth2ConfigProvider == nil {
 				t.Errorf("InitOauth2Config() - oauth2C.provider is nil, want not nil")
 			}
 			pointerCopy := oauth2C
@@ -81,7 +82,7 @@ func TestLogin(t *testing.T) {
 		t.Fatal(err)
 	}
 	oauth2C = &oauth2Config{
-		provider: &oauth2Mock{},
+		&oauth2Mock{},
 	}
 
 	type args struct {
@@ -118,7 +119,7 @@ func TestOauth2Redirect(t *testing.T) {
 		t.Fatal(err)
 	}
 	oauth2C = &oauth2Config{
-		provider: &oauth2Mock{},
+		&oauth2Mock{},
 	}
 
 	type args struct {
@@ -127,20 +128,20 @@ func TestOauth2Redirect(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want http.HandlerFunc
+		want int
 	}{
 		{
 			name: "success case",
 			args: args{port: "8900"},
-			want: Oauth2Redirect("8900"),
+			want: http.StatusSeeOther,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handlerFunction := Oauth2Redirect(tt.args.port)
 			handlerFunction(recorder, req)
-			if recorder.Code != http.StatusSeeOther {
-				t.Errorf("Oauth2Redirect() = %v, want %v", recorder.Code, http.StatusSeeOther)
+			if recorder.Code != tt.want {
+				t.Errorf("Oauth2Redirect() = %v, want %v", recorder.Code, tt.want)
 			}
 		})
 	}
@@ -154,7 +155,7 @@ func TestSwitchAccount(t *testing.T) { // mocks
 		t.Fatal(err)
 	}
 	oauth2C = &oauth2Config{
-		provider: &oauth2Mock{},
+		&oauth2Mock{},
 	}
 
 	type args struct {
@@ -186,7 +187,7 @@ func TestSwitchAccount(t *testing.T) { // mocks
 func Test_getToken(t *testing.T) {
 	// mocks
 	oauth2C = &oauth2Config{
-		provider: &oauth2Mock{},
+		&oauth2Mock{},
 	}
 
 	type args struct {
