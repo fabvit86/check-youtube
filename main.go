@@ -20,6 +20,7 @@ var htmlTemplate []byte
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 	port := utils.GetEnvOrFallback("SERVER_PORT", "8900")
+	serverBasepath := fmt.Sprintf("http://localhost:%s", port)
 	clientID, err := utils.GetEnvOrErr("CLIENT_ID")
 	if err != nil {
 		log.Fatal(err)
@@ -38,10 +39,10 @@ func main() {
 
 	// serve endpoints
 	http.HandleFunc("/login", auth.Login)
-	http.HandleFunc("/landing", auth.Oauth2Redirect(port))
-	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification(port, string(htmlTemplate)))
+	http.HandleFunc("/landing", auth.Oauth2Redirect(serverBasepath))
+	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification(serverBasepath, string(htmlTemplate)))
 	http.HandleFunc("/switch-account", auth.SwitchAccount)
-	http.HandleFunc("/mark-as-viewed", handlers.MarkAsViewed)
+	http.HandleFunc("/mark-as-viewed", handlers.MarkAsViewed(serverBasepath))
 	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
 
 	log.Println(fmt.Sprintf("listening on port %s...", port))

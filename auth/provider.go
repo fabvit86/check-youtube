@@ -11,7 +11,7 @@ import (
 type Oauth2ConfigProvider interface {
 	generateVerifier() string
 	generateAuthURL(state string, opts ...oauth2.AuthCodeOption) string
-	exchangeCodeWithToken(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
+	exchangeCodeWithTokenSource(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (oauth2.TokenSource, error)
 	createHTTPClient(ctx context.Context, token *oauth2.Token) *http.Client
 }
 
@@ -27,14 +27,15 @@ func (o *oauth2ConfigInstance) generateAuthURL(state string, opts ...oauth2.Auth
 	return o.oauth2Config.AuthCodeURL(state, opts...)
 }
 
-func (o *oauth2ConfigInstance) exchangeCodeWithToken(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
+func (o *oauth2ConfigInstance) exchangeCodeWithTokenSource(ctx context.Context, code string,
+	opts ...oauth2.AuthCodeOption) (oauth2.TokenSource, error) {
 	token, err := o.oauth2Config.Exchange(ctx, code, opts...)
 	if err != nil {
 		log.Println(fmt.Sprintf("failed to retrieve auth token, error: %v", err))
 		return nil, err
 	}
 
-	return token, nil
+	return o.oauth2Config.TokenSource(ctx, token), nil
 }
 
 func (o *oauth2ConfigInstance) createHTTPClient(ctx context.Context, token *oauth2.Token) *http.Client {

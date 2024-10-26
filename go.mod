@@ -3,7 +3,7 @@ module checkYoutube
 go 1.21
 
 require (
-	github.com/joho/godotenv v1.5.1
+	github.com/google/go-cmp v0.6.0
 	golang.org/x/oauth2 v0.19.0
 	google.golang.org/api v0.177.0
 )

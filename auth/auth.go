@@ -14,12 +14,19 @@ import (
 	"sync"
 )
 
+// oauth2Config embeds the interface that wraps oauth2.Config
 type oauth2Config struct {
-	provider       Oauth2ConfigProvider
+	Oauth2ConfigProvider
+}
+
+// loginStorage stores the data needed for a single oauth2 login flow
+type loginStorage struct {
 	oauth2Verifier string
 }
 
-// package-shared singleton
+var oauthStore loginStorage
+
+// package-shared singleton that specifies oauth2 configuration
 var oauth2C *oauth2Config
 var once sync.Once
 
@@ -27,7 +34,7 @@ var once sync.Once
 func InitOauth2Config(clientID, clientSecret, redirectURL string) {
 	once.Do(func() {
 		oauth2C = &oauth2Config{
-			provider: &oauth2ConfigInstance{
+			&oauth2ConfigInstance{
 				oauth2Config: oauth2.Config{
 					ClientID:     clientID,
 					ClientSecret: clientSecret,
@@ -43,18 +50,21 @@ func InitOauth2Config(clientID, clientSecret, redirectURL string) {
 // Login oauth2 login
 func Login(w http.ResponseWriter, r *http.Request) {
 	// generate and store oauth code verifier
-	oauth2C.oauth2Verifier = oauth2C.provider.generateVerifier()
+	verifier := oauth2C.generateVerifier()
 
 	// get auth url for user's authentication
-	url := oauth2C.provider.generateAuthURL("state", oauth2.AccessTypeOffline,
-		oauth2.S256ChallengeOption(oauth2C.oauth2Verifier))
+	url := oauth2C.generateAuthURL("state", oauth2.AccessTypeOffline,
+		oauth2.S256ChallengeOption(verifier))
+
+	// store verifier
+	oauthStore = loginStorage{verifier}
 
 	// redirect to the Google's auth url
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
 // Oauth2Redirect oauth2 redirect landing endpoint
-func Oauth2Redirect(port string) http.HandlerFunc {
+func Oauth2Redirect(serverBasepath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// get code from request URL
 		code := r.URL.Query().Get("code")
@@ -67,7 +77,7 @@ func Oauth2Redirect(port string) http.HandlerFunc {
 		}
 
 		// redirect to YouTube check endpoint
-		http.Redirect(w, r, fmt.Sprintf("http://localhost:%s/check-youtube?filtered=true", port), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("%s/check-youtube?filtered=true", serverBasepath), http.StatusSeeOther)
 	}
 }
 
@@ -75,27 +85,23 @@ func Oauth2Redirect(port string) http.HandlerFunc {
 func getToken(code string) error {
 	ctx := context.Background()
 
-	// get the token
-	token, err := oauth2C.provider.exchangeCodeWithToken(ctx, code, oauth2.VerifierOption(oauth2C.oauth2Verifier))
+	// get the token source from token exchange
+	ts, err := oauth2C.exchangeCodeWithTokenSource(ctx, code, oauth2.VerifierOption(oauthStore.oauth2Verifier))
 	if err != nil {
 		log.Println(fmt.Sprintf("failed to exchange auth code with token, error: %v", err))
 		return err
 	}
 
-	// init http client
-	handlers.Client = oauth2C.provider.createHTTPClient(ctx, token)
-
-	// init YouTube service
-	err = handlers.InitService(handlers.YoutubeService)
+	// init the http client using the token
+	token, err := ts.Token()
 	if err != nil {
-		log.Println(fmt.Sprintf("failed to init YouTube service, error: %v", err))
-		return err
+		fmt.Println(fmt.Sprintf("failed to get token from token source, error: %v", err))
 	}
 
-	// init Google People service
-	err = handlers.InitService(handlers.PeopleService)
+	// init services
+	err = handlers.InitServices(ts, oauth2C.createHTTPClient(ctx, token))
 	if err != nil {
-		log.Println(fmt.Sprintf("failed to init People service, error: %v", err))
+		log.Println(fmt.Sprintf("failed to init services, error: %v", err))
 		return err
 	}
 
@@ -106,8 +112,8 @@ func getToken(code string) error {
 // SwitchAccount redirect the user to select an account
 func SwitchAccount(w http.ResponseWriter, r *http.Request) {
 	promptAccountSelect := oauth2.SetAuthURLParam("prompt", "select_account")
-	url := oauth2C.provider.generateAuthURL("state", oauth2.AccessTypeOffline,
-		oauth2.S256ChallengeOption(oauth2C.oauth2Verifier), promptAccountSelect)
+	url := oauth2C.generateAuthURL("state", oauth2.AccessTypeOffline,
+		oauth2.S256ChallengeOption(oauthStore.oauth2Verifier), promptAccountSelect)
 
 	// redirect to the Google's auth url
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
