@@ -3,9 +3,12 @@ package auth
 import (
 	"checkYoutube/testing_utils"
 	"context"
+	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"reflect"
 	"testing"
 )
 
@@ -15,7 +18,7 @@ type oauth2Mock struct{}
 func (o *oauth2Mock) generateVerifier() string {
 	return "mockVerifier"
 }
-func (o *oauth2Mock) generateAuthURL(string, ...oauth2.AuthCodeOption) string {
+func (o *oauth2Mock) generateAuthURL(string, string, bool) string {
 	return "mockURL"
 }
 func (o *oauth2Mock) exchangeCodeWithTokenSource(context.Context, string, ...oauth2.AuthCodeOption) (oauth2.TokenSource, error) {
@@ -23,6 +26,11 @@ func (o *oauth2Mock) exchangeCodeWithTokenSource(context.Context, string, ...oau
 }
 func (o *oauth2Mock) createHTTPClient(context.Context, *oauth2.Token) *http.Client {
 	return &http.Client{}
+}
+
+func TestMain(m *testing.M) {
+	sessionStore = sessions.NewCookieStore([]byte(("test")))
+	os.Exit(m.Run())
 }
 
 func TestInitOauth2Config(t *testing.T) {
@@ -118,12 +126,20 @@ func TestOauth2Redirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx := req.Context()
+	ctx = context.WithValue(ctx, verifierCtxKey{}, "verifier")
+	req = req.WithContext(ctx)
 	oauth2C = &oauth2Config{
 		&oauth2Mock{},
 	}
+	session, err := sessionStore.Get(req, sessionName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Values[verifierKey] = "verifier"
 
 	type args struct {
-		port string
+		serverBasepath string
 	}
 	tests := []struct {
 		name string
@@ -132,13 +148,13 @@ func TestOauth2Redirect(t *testing.T) {
 	}{
 		{
 			name: "success case",
-			args: args{port: "8900"},
+			args: args{serverBasepath: "http://localhost:8900"},
 			want: http.StatusSeeOther,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handlerFunction := Oauth2Redirect(tt.args.port)
+			handlerFunction := Oauth2Redirect(tt.args.serverBasepath)
 			handlerFunction(recorder, req)
 			if recorder.Code != tt.want {
 				t.Errorf("Oauth2Redirect() = %v, want %v", recorder.Code, tt.want)
@@ -154,29 +170,29 @@ func TestSwitchAccount(t *testing.T) { // mocks
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx := req.Context()
+	ctx = context.WithValue(ctx, verifierCtxKey{}, "verifier")
+	req = req.WithContext(ctx)
 	oauth2C = &oauth2Config{
 		&oauth2Mock{},
 	}
-
-	type args struct {
-		w http.ResponseWriter
-		r *http.Request
+	session, err := sessionStore.Get(req, sessionName)
+	if err != nil {
+		t.Fatal(err)
 	}
+	session.Values[verifierKey] = "verifier"
+
 	tests := []struct {
 		name string
-		args args
 	}{
 		{
 			name: "success case",
-			args: args{
-				w: recorder,
-				r: req,
-			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			SwitchAccount(tt.args.w, tt.args.r)
+			handlerFunction := SwitchAccount()
+			handlerFunction(recorder, req)
 			if recorder.Code != http.StatusTemporaryRedirect {
 				t.Errorf("Login() = %v, want %v", recorder.Code, http.StatusTemporaryRedirect)
 			}
@@ -191,7 +207,8 @@ func Test_getToken(t *testing.T) {
 	}
 
 	type args struct {
-		code string
+		code     string
+		verifier string
 	}
 	tests := []struct {
 		name    string
@@ -200,14 +217,62 @@ func Test_getToken(t *testing.T) {
 	}{
 		{
 			name:    "success case",
-			args:    args{code: "test"},
+			args:    args{code: "test", verifier: "verifier"},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := getToken(tt.args.code); (err != nil) != tt.wantErr {
+			if err := getToken(tt.args.code, tt.args.verifier); (err != nil) != tt.wantErr {
 				t.Errorf("getToken() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckVerifierMiddleware(t *testing.T) {
+	type args struct {
+		next           http.Handler
+		serverBasepath string
+	}
+	tests := []struct {
+		name string
+		args args
+		want http.HandlerFunc
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := CheckVerifierMiddleware(tt.args.next, tt.args.serverBasepath); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("CheckVerifierMiddleware() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getValueFromSession(t *testing.T) {
+	type args struct {
+		r   *http.Request
+		key string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		wantErr bool
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := getValueFromSession(tt.args.r, tt.args.key)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("getValueFromSession() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("getValueFromSession() got = %v, want %v", got, tt.want)
 			}
 		})
 	}

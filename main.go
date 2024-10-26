@@ -29,19 +29,19 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	RedirectURL, err := utils.GetEnvOrErr("OAUTH_LANDING_PAGE")
+	redirectURL, err := utils.GetEnvOrErr("OAUTH_LANDING_PAGE")
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// init oauth2 config
-	auth.InitOauth2Config(clientID, clientSecret, RedirectURL)
+	auth.InitOauth2Config(clientID, clientSecret, redirectURL)
 
 	// serve endpoints
 	http.HandleFunc("/login", auth.Login)
-	http.HandleFunc("/landing", auth.Oauth2Redirect(serverBasepath))
+	http.HandleFunc("/landing", auth.CheckVerifierMiddleware(auth.Oauth2Redirect(serverBasepath), serverBasepath))
 	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification(serverBasepath, string(htmlTemplate)))
-	http.HandleFunc("/switch-account", auth.SwitchAccount)
+	http.HandleFunc("/switch-account", auth.CheckVerifierMiddleware(auth.SwitchAccount(), serverBasepath))
 	http.HandleFunc("/mark-as-viewed", handlers.MarkAsViewed(serverBasepath))
 	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
 

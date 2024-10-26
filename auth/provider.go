@@ -10,7 +10,7 @@ import (
 
 type Oauth2ConfigProvider interface {
 	generateVerifier() string
-	generateAuthURL(state string, opts ...oauth2.AuthCodeOption) string
+	generateAuthURL(state, verifier string, promptAccountSelect bool) string
 	exchangeCodeWithTokenSource(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (oauth2.TokenSource, error)
 	createHTTPClient(ctx context.Context, token *oauth2.Token) *http.Client
 }
@@ -23,7 +23,15 @@ func (o *oauth2ConfigInstance) generateVerifier() string {
 	return oauth2.GenerateVerifier()
 }
 
-func (o *oauth2ConfigInstance) generateAuthURL(state string, opts ...oauth2.AuthCodeOption) string {
+func (o *oauth2ConfigInstance) generateAuthURL(state, verifier string, promptAccountSelect bool) string {
+	opts := []oauth2.AuthCodeOption{
+		oauth2.AccessTypeOffline,
+		oauth2.S256ChallengeOption(verifier),
+	}
+	if promptAccountSelect {
+		opts = append(opts, oauth2.SetAuthURLParam("prompt", "select_account"))
+	}
+
 	return o.oauth2Config.AuthCodeURL(state, opts...)
 }
 

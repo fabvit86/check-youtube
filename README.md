@@ -19,6 +19,7 @@ Set the following env variables:
 - CLIENT_SECRET: The oauth2 client_secret of the application
 - SERVER_PORT: The server port, default to 8900
 - OAUTH_LANDING_PAGE: The oauth2 landing page, e.g.: http://localhost:8900/landing
+- SESSION_KEY: A random string used to init the session cookie store
 
 Running the code will start the web server. User should go to http://localhost:<SERVER_PORT>/login to login using Google, the server will then redirect the user to the main application page.
 
