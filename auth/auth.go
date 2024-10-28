@@ -24,8 +24,8 @@ type oauth2Config struct {
 type verifierCtxKey struct{}
 
 const (
-	sessionName = "oauth2_session"
-	verifierKey = "verifier"
+	oauth2SessionName = "oauth2_session"
+	verifierKey       = "verifier"
 )
 
 // session storage, used to store the data needed for the oauth2 login flow
@@ -55,7 +55,7 @@ func InitOauth2Config(clientID, clientSecret, redirectURL string) {
 // Login oauth2 login
 func Login(w http.ResponseWriter, r *http.Request) {
 	// add and retrieve session
-	session, err := sessionStore.Get(r, sessionName)
+	session, err := sessionStore.Get(r, oauth2SessionName)
 	if err != nil {
 		log.Println("failed to get session: ", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -138,7 +138,9 @@ func SwitchAccount() http.HandlerFunc {
 		// retrieve verifier from context
 		verifier, verifierOk := r.Context().Value(verifierCtxKey{}).(string)
 		if !verifierOk {
-			http.Error(w, "verifier not found in context", http.StatusInternalServerError)
+			errMsg := "verifier not found in context"
+			log.Println(errMsg)
+			http.Error(w, errMsg, http.StatusInternalServerError)
 			return
 		}
 
@@ -151,7 +153,7 @@ func SwitchAccount() http.HandlerFunc {
 // CheckVerifierMiddleware redirects the user if the oauth2 verifier is not found in the session
 func CheckVerifierMiddleware(next http.Handler, serverBasepath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		verifier, err := getValueFromSession(r, verifierKey)
+		verifier, err := getValueFromSession(r, oauth2SessionName, verifierKey)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -174,7 +176,7 @@ func CheckVerifierMiddleware(next http.Handler, serverBasepath string) http.Hand
 }
 
 // getValueFromSession returns the data having the given key from the session store
-func getValueFromSession(r *http.Request, key string) (string, error) {
+func getValueFromSession(r *http.Request, sessionName, key string) (string, error) {
 	var value string
 
 	// retrieve session from cookie
