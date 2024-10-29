@@ -11,6 +11,7 @@ import (
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/youtube/v3"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"sync"
@@ -57,7 +58,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	// add and retrieve session
 	session, err := sessionStore.Get(r, oauth2SessionName)
 	if err != nil {
-		log.Println("failed to get session: ", err)
+		slog.Error(fmt.Sprintf("failed to get session: %s", err.Error()))
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -69,7 +70,7 @@ func Login(w http.ResponseWriter, r *http.Request) {
 	// set session cookie in the response
 	err = session.Save(r, w)
 	if err != nil {
-		log.Println("failed to save session: ", err)
+		slog.Error(fmt.Sprintf("failed to save session: %s", err.Error()))
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -111,24 +112,24 @@ func getToken(code, verifier string) error {
 	// get the token source from token exchange
 	ts, err := oauth2C.exchangeCodeWithTokenSource(ctx, code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		log.Println(fmt.Sprintf("failed to exchange auth code with token, error: %v", err))
+		slog.Error(fmt.Sprintf("failed to exchange auth code with token, error: %s", err.Error()))
 		return err
 	}
 
 	// init the http client using the token
 	token, err := ts.Token()
 	if err != nil {
-		fmt.Println(fmt.Sprintf("failed to get token from token source, error: %v", err))
+		slog.Error(fmt.Sprintf("failed to get token from token source, error: %s", err.Error()))
 	}
 
 	// init services
 	err = handlers.InitServices(ts, oauth2C.createHTTPClient(ctx, token))
 	if err != nil {
-		log.Println(fmt.Sprintf("failed to init services, error: %v", err))
+		slog.Error(fmt.Sprintf("failed to init services, error: %s", err.Error()))
 		return err
 	}
 
-	log.Println("user successfully authenticated")
+	slog.Info("user successfully authenticated")
 	return nil
 }
 
@@ -139,7 +140,7 @@ func SwitchAccount() http.HandlerFunc {
 		verifier, verifierOk := r.Context().Value(verifierCtxKey{}).(string)
 		if !verifierOk {
 			errMsg := "verifier not found in context"
-			log.Println(errMsg)
+			slog.Error(errMsg)
 			http.Error(w, errMsg, http.StatusInternalServerError)
 			return
 		}
@@ -155,12 +156,13 @@ func CheckVerifierMiddleware(next http.Handler, serverBasepath string) http.Hand
 	return func(w http.ResponseWriter, r *http.Request) {
 		verifier, err := getValueFromSession(r, oauth2SessionName, verifierKey)
 		if err != nil {
+			slog.Error(err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if verifier == "" {
 			// redirect to login page
-			log.Println("verifier not found in session, redirect to login")
+			slog.Warn("verifier not found in session, redirect to login")
 			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
 			return
 		}
@@ -182,14 +184,14 @@ func getValueFromSession(r *http.Request, sessionName, key string) (string, erro
 	// retrieve session from cookie
 	session, err := sessionStore.Get(r, sessionName)
 	if err != nil {
-		log.Println("failed to get session: ", err)
+		slog.Error(fmt.Sprintf("failed to get session: %s", err.Error()))
 		return value, err
 	}
 
 	// retrieve value from session
 	value, verifierOk := session.Values[key].(string)
 	if session.IsNew || !verifierOk {
-		log.Println(fmt.Sprintf("session is expired or value with key '%s' is invalid", key))
+		slog.Warn(fmt.Sprintf("session is expired or value with key '%s' is invalid", key))
 	}
 
 	return value, nil

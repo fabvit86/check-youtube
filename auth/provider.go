@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"golang.org/x/oauth2"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -39,7 +39,7 @@ func (o *oauth2ConfigInstance) exchangeCodeWithTokenSource(ctx context.Context, 
 	opts ...oauth2.AuthCodeOption) (oauth2.TokenSource, error) {
 	token, err := o.oauth2Config.Exchange(ctx, code, opts...)
 	if err != nil {
-		log.Println(fmt.Sprintf("failed to retrieve auth token, error: %v", err))
+		slog.Error(fmt.Sprintf("failed to retrieve auth token, error: %s", err.Error()))
 		return nil, err
 	}
 

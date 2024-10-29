@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/youtube/v3"
-	"log"
+	"log/slog"
 )
 
 type PeopleClientInterface interface {
@@ -22,7 +22,7 @@ func (p *peopleClient) getLoggedUserinfo() string {
 		PersonFields("names").
 		Do()
 	if err != nil {
-		log.Println(fmt.Sprintf("error retrieving logged user info: %v", err))
+		slog.Error(fmt.Sprintf("error retrieving logged user info: %s", err.Error()))
 		return ""
 	}
 
@@ -52,7 +52,7 @@ func (y *youtubeClient) getAndProcessSubscriptions(ctx context.Context,
 		MaxResults(50).
 		Pages(ctx, processFunction)
 	if err != nil {
-		log.Println(fmt.Sprintf("error retrieving YouTube subscriptions list: %v", err))
+		slog.Error(fmt.Sprintf("error retrieving YouTube subscriptions list: %s", err.Error()))
 		return err
 	}
 
@@ -66,7 +66,7 @@ func (y *youtubeClient) getLatestVideoFromPlaylist(playlistID string) (*youtube.
 		MaxResults(1).
 		Do()
 	if err != nil {
-		log.Println(fmt.Sprintf("error retrieving latest YouTube video from playlist %s: %v", playlistID, err))
+		slog.Error(fmt.Sprintf("error retrieving latest YouTube video from playlist %s: %s", playlistID, err.Error()))
 		return nil, err
 	}
 
@@ -74,6 +74,6 @@ func (y *youtubeClient) getLatestVideoFromPlaylist(playlistID string) (*youtube.
 		return playlistItemsResponse.Items[0], nil
 	}
 
-	log.Println(fmt.Sprintf("no video found in playlist %s", playlistID))
+	slog.Debug(fmt.Sprintf("no video found in playlist %s", playlistID))
 	return nil, nil
 }
