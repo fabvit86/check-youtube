@@ -3,14 +3,12 @@ package auth
 import (
 	"checkYoutube/handlers"
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/youtube/v3"
-	"log"
 	"log/slog"
 	"net/http"
 )
@@ -77,7 +75,9 @@ func Oauth2Redirect(oauth2C Oauth2Config, serverBasepath string) http.HandlerFun
 		// retrieve verifier from context
 		verifier, verifierOk := r.Context().Value(verifierCtxKey{}).(string)
 		if !verifierOk {
-			http.Error(w, "verifier not found in context", http.StatusInternalServerError)
+			err := fmt.Errorf("verifier not found in context")
+			slog.Error(err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -85,10 +85,9 @@ func Oauth2Redirect(oauth2C Oauth2Config, serverBasepath string) http.HandlerFun
 		code := r.URL.Query().Get("code")
 		err := getToken(oauth2C, code, verifier)
 		if err != nil {
-			encErr := json.NewEncoder(w).Encode(err.Error())
-			if encErr != nil {
-				log.Fatal(encErr)
-			}
+			slog.Error(err.Error())
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 
 		// redirect to YouTube check endpoint
@@ -111,6 +110,7 @@ func getToken(oauth2C Oauth2Config, code, verifier string) error {
 	token, err := ts.Token()
 	if err != nil {
 		slog.Error(fmt.Sprintf("failed to get token from token source, error: %s", err.Error()))
+		return err
 	}
 
 	// init services
