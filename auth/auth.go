@@ -13,12 +13,10 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
-	"os"
-	"sync"
 )
 
-// oauth2Config embeds the interface that wraps oauth2.Config
-type oauth2Config struct {
+// Oauth2Config embeds the interface that wraps an oauth2.Config
+type Oauth2Config struct {
 	Oauth2ConfigProvider
 }
 
@@ -29,59 +27,52 @@ const (
 	verifierKey       = "verifier"
 )
 
-// session storage, used to store the data needed for the oauth2 login flow
-var sessionStore = sessions.NewCookieStore([]byte((os.Getenv("SESSION_KEY"))))
-
-// package-shared singleton that specifies oauth2 configuration
-var oauth2C *oauth2Config
-var once sync.Once
-
-// InitOauth2Config initializes the oauth2 config as singleton
-func InitOauth2Config(clientID, clientSecret, redirectURL string) {
-	once.Do(func() {
-		oauth2C = &oauth2Config{
-			&oauth2ConfigInstance{
-				oauth2Config: oauth2.Config{
-					ClientID:     clientID,
-					ClientSecret: clientSecret,
-					Endpoint:     google.Endpoint,
-					RedirectURL:  redirectURL,
-					Scopes:       []string{youtube.YoutubeScope, people.UserinfoProfileScope},
-				},
+// CreateOauth2Config creates a new Oauth2Config instance
+func CreateOauth2Config(clientID, clientSecret, redirectURL string) Oauth2Config {
+	return Oauth2Config{
+		&oauth2ConfigInstance{
+			oauth2Config: oauth2.Config{
+				ClientID:     clientID,
+				ClientSecret: clientSecret,
+				Endpoint:     google.Endpoint,
+				RedirectURL:  redirectURL,
+				Scopes:       []string{youtube.YoutubeScope, people.UserinfoProfileScope},
 			},
-		}
-	})
+		},
+	}
 }
 
 // Login oauth2 login
-func Login(w http.ResponseWriter, r *http.Request) {
-	// add and retrieve session
-	session, err := sessionStore.Get(r, oauth2SessionName)
-	if err != nil {
-		slog.Error(fmt.Sprintf("failed to get session: %s", err.Error()))
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+func Login(oauth2C Oauth2Config, sessionStore *sessions.CookieStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// add and retrieve session
+		session, err := sessionStore.Get(r, oauth2SessionName)
+		if err != nil {
+			slog.Error(fmt.Sprintf("failed to get session: %s", err.Error()))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// generate and store oauth code verifier
+		verifier := oauth2C.generateVerifier()
+		session.Values[verifierKey] = verifier
+
+		// set session cookie in the response
+		err = session.Save(r, w)
+		if err != nil {
+			slog.Error(fmt.Sprintf("failed to save session: %s", err.Error()))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// redirect to the Google's auth url
+		url := oauth2C.generateAuthURL("state", verifier, true)
+		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 	}
-
-	// generate and store oauth code verifier
-	verifier := oauth2C.generateVerifier()
-	session.Values[verifierKey] = verifier
-
-	// set session cookie in the response
-	err = session.Save(r, w)
-	if err != nil {
-		slog.Error(fmt.Sprintf("failed to save session: %s", err.Error()))
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// redirect to the Google's auth url
-	url := oauth2C.generateAuthURL("state", verifier, true)
-	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
 // Oauth2Redirect oauth2 redirect landing endpoint
-func Oauth2Redirect(serverBasepath string) http.HandlerFunc {
+func Oauth2Redirect(oauth2C Oauth2Config, serverBasepath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// retrieve verifier from context
 		verifier, verifierOk := r.Context().Value(verifierCtxKey{}).(string)
@@ -92,7 +83,7 @@ func Oauth2Redirect(serverBasepath string) http.HandlerFunc {
 
 		// get code from request URL
 		code := r.URL.Query().Get("code")
-		err := getToken(code, verifier)
+		err := getToken(oauth2C, code, verifier)
 		if err != nil {
 			encErr := json.NewEncoder(w).Encode(err.Error())
 			if encErr != nil {
@@ -106,7 +97,7 @@ func Oauth2Redirect(serverBasepath string) http.HandlerFunc {
 }
 
 // get auth token from OAUTH2 code exchange, and init the services
-func getToken(code, verifier string) error {
+func getToken(oauth2C Oauth2Config, code, verifier string) error {
 	ctx := context.Background()
 
 	// get the token source from token exchange
@@ -134,7 +125,7 @@ func getToken(code, verifier string) error {
 }
 
 // SwitchAccount redirect the user to select an account
-func SwitchAccount() http.HandlerFunc {
+func SwitchAccount(oauth2C Oauth2Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// retrieve verifier from context
 		verifier, verifierOk := r.Context().Value(verifierCtxKey{}).(string)
@@ -152,9 +143,9 @@ func SwitchAccount() http.HandlerFunc {
 }
 
 // CheckVerifierMiddleware redirects the user if the oauth2 verifier is not found in the session
-func CheckVerifierMiddleware(next http.Handler, serverBasepath string) http.HandlerFunc {
+func CheckVerifierMiddleware(next http.Handler, sessionStore *sessions.CookieStore, serverBasepath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		verifier, err := getValueFromSession(r, oauth2SessionName, verifierKey)
+		verifier, err := getValueFromSession(sessionStore, r, oauth2SessionName, verifierKey)
 		if err != nil {
 			slog.Error(err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -178,7 +169,7 @@ func CheckVerifierMiddleware(next http.Handler, serverBasepath string) http.Hand
 }
 
 // getValueFromSession returns the data having the given key from the session store
-func getValueFromSession(r *http.Request, sessionName, key string) (string, error) {
+func getValueFromSession(sessionStore *sessions.CookieStore, r *http.Request, sessionName, key string) (string, error) {
 	var value string
 
 	// retrieve session from cookie

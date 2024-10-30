@@ -7,6 +7,7 @@ import (
 	"embed"
 	_ "embed"
 	"fmt"
+	"github.com/gorilla/sessions"
 	"log/slog"
 	"net/http"
 	"os"
@@ -41,14 +42,19 @@ func main() {
 		os.Exit(-1)
 	}
 
-	// init oauth2 config
-	auth.InitOauth2Config(clientID, clientSecret, redirectURL)
+	// session storage, used to store the data needed for the oauth2 login flow
+	sessionStore := sessions.NewCookieStore([]byte((os.Getenv("SESSION_KEY"))))
+
+	// create oauth2 config
+	oauth2C := auth.CreateOauth2Config(clientID, clientSecret, redirectURL)
 
 	// register handlers
-	http.HandleFunc("/login", auth.Login)
-	http.HandleFunc("/landing", auth.CheckVerifierMiddleware(auth.Oauth2Redirect(serverBasepath), serverBasepath))
+	http.HandleFunc("/login", auth.Login(oauth2C, sessionStore))
+	http.HandleFunc("/landing", auth.CheckVerifierMiddleware(
+		auth.Oauth2Redirect(oauth2C, serverBasepath), sessionStore, serverBasepath))
 	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification(serverBasepath, string(htmlTemplate)))
-	http.HandleFunc("/switch-account", auth.CheckVerifierMiddleware(auth.SwitchAccount(), serverBasepath))
+	http.HandleFunc("/switch-account", auth.CheckVerifierMiddleware(
+		auth.SwitchAccount(oauth2C), sessionStore, serverBasepath))
 	http.HandleFunc("/mark-as-viewed", handlers.MarkAsViewed(serverBasepath))
 	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
 
