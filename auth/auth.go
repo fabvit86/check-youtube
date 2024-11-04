@@ -56,6 +56,7 @@ func Login(oauth2C Oauth2Config, sessionStore *sessions.CookieStore) http.Handle
 		session.Values[verifierKey] = verifier
 
 		// set session cookie in the response
+		session.Options.HttpOnly = true
 		err = session.Save(r, w)
 		if err != nil {
 			slog.Error(fmt.Sprintf("failed to save session: %s", err.Error()))
