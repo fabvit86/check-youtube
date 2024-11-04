@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"checkYoutube/logging"
 	"context"
 	"fmt"
 	"golang.org/x/oauth2"
@@ -37,9 +38,12 @@ func (o *oauth2ConfigInstance) generateAuthURL(state, verifier string, promptAcc
 
 func (o *oauth2ConfigInstance) exchangeCodeWithTokenSource(ctx context.Context, code string,
 	opts ...oauth2.AuthCodeOption) (oauth2.TokenSource, error) {
+	const funcName = "exchangeCodeWithTokenSource"
+
 	token, err := o.oauth2Config.Exchange(ctx, code, opts...)
 	if err != nil {
-		slog.Error(fmt.Sprintf("failed to retrieve auth token, error: %s", err.Error()))
+		slog.Error(fmt.Sprintf("failed to retrieve auth token, error: %s", err.Error()),
+			logging.FuncNameAttr(funcName))
 		return nil, err
 	}
 

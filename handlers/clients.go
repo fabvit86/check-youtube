@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"checkYoutube/logging"
 	"context"
 	"fmt"
 	"google.golang.org/api/people/v1"
@@ -17,12 +18,15 @@ type peopleClient struct {
 }
 
 func (p *peopleClient) getLoggedUserinfo() string {
+	const funcName = "getLoggedUserinfo"
+
 	userinfo, err := p.svc.People.
 		Get("people/me").
 		PersonFields("names").
 		Do()
 	if err != nil {
-		slog.Error(fmt.Sprintf("error retrieving logged user info: %s", err.Error()))
+		slog.Error(fmt.Sprintf("error retrieving logged user info: %s", err.Error()),
+			logging.FuncNameAttr(funcName))
 		return ""
 	}
 
@@ -45,6 +49,8 @@ type youtubeClient struct {
 
 func (y *youtubeClient) getAndProcessSubscriptions(ctx context.Context,
 	processFunction func(*youtube.SubscriptionListResponse) error) error {
+	const funcName = "getAndProcessSubscriptions"
+
 	err := y.svc.Subscriptions.
 		List([]string{"contentDetails", "snippet"}).
 		Order("unread").
@@ -52,7 +58,8 @@ func (y *youtubeClient) getAndProcessSubscriptions(ctx context.Context,
 		MaxResults(50).
 		Pages(ctx, processFunction)
 	if err != nil {
-		slog.Error(fmt.Sprintf("error retrieving YouTube subscriptions list: %s", err.Error()))
+		slog.Error(fmt.Sprintf("error retrieving YouTube subscriptions list: %s", err.Error()),
+			logging.FuncNameAttr(funcName))
 		return err
 	}
 
@@ -60,13 +67,16 @@ func (y *youtubeClient) getAndProcessSubscriptions(ctx context.Context,
 }
 
 func (y *youtubeClient) getLatestVideoFromPlaylist(playlistID string) (*youtube.PlaylistItem, error) {
+	const funcName = "getLatestVideoFromPlaylist"
+
 	playlistItemsResponse, err := y.svc.PlaylistItems.
 		List([]string{"snippet"}).
 		PlaylistId(playlistID).
 		MaxResults(1).
 		Do()
 	if err != nil {
-		slog.Error(fmt.Sprintf("error retrieving latest YouTube video from playlist %s: %s", playlistID, err.Error()))
+		slog.Error(fmt.Sprintf("error retrieving latest YouTube video from playlist %s: %s",
+			playlistID, err.Error()), logging.FuncNameAttr(funcName))
 		return nil, err
 	}
 
@@ -74,6 +84,6 @@ func (y *youtubeClient) getLatestVideoFromPlaylist(playlistID string) (*youtube.
 		return playlistItemsResponse.Items[0], nil
 	}
 
-	slog.Debug(fmt.Sprintf("no video found in playlist %s", playlistID))
+	slog.Debug(fmt.Sprintf("no video found in playlist %s", playlistID), logging.FuncNameAttr(funcName))
 	return nil, nil
 }

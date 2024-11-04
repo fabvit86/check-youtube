@@ -3,6 +3,7 @@ package main
 import (
 	"checkYoutube/auth"
 	"checkYoutube/handlers"
+	"checkYoutube/logging"
 	"checkYoutube/utils"
 	"embed"
 	_ "embed"
@@ -20,25 +21,27 @@ var staticContent embed.FS
 var htmlTemplate []byte
 
 func main() {
+	const funcName = "main"
+
 	// configure logger
-	utils.ConfigureLogger(utils.GetEnvOrFallback("LOG_LEVEL", slog.LevelInfo.String()))
+	logging.ConfigureLogger(utils.GetEnvOrFallback("LOG_LEVEL", slog.LevelInfo.String()))
 
 	// get env veriables
 	port := utils.GetEnvOrFallback("SERVER_PORT", "8900")
 	serverBasepath := fmt.Sprintf("http://localhost:%s", port)
 	clientID, err := utils.GetEnvOrErr("CLIENT_ID")
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
 	clientSecret, err := utils.GetEnvOrErr("CLIENT_SECRET")
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
 	redirectURL, err := utils.GetEnvOrErr("OAUTH_LANDING_PAGE")
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
 
@@ -59,9 +62,9 @@ func main() {
 	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
 
 	// start the server
-	slog.Info(fmt.Sprintf("listening on port %s...", port))
+	slog.Info(fmt.Sprintf("listening on port %s...", port), logging.FuncNameAttr(funcName))
 	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), nil); err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
 }
