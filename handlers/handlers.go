@@ -144,8 +144,8 @@ func checkYoutube(svc YoutubeClientInterface, filtered bool) []YTChannel {
 					defer wg.Done()
 					responseItem, err := processYouTubeChannel(svc, item)
 					if err != nil {
-						slog.Warn("failed to retrieve latest YouTube video from playlist, "+
-							"skipping info for channel ", responseItem.Title)
+						slog.Warn(fmt.Sprintf("failed to retrieve latest YouTube video from playlist, "+
+							"skipping info for channel %s", responseItem.Title))
 					}
 					response = append(response, responseItem)
 				}(item)
