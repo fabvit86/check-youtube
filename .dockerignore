@@ -27,3 +27,4 @@ creds.json
 # git
 .git
 .gitignore
+.github

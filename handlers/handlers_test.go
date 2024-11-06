@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"bytes"
+	"checkYoutube/auth"
 	"checkYoutube/testing_utils"
+	"checkYoutube/utils/sessions"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +24,12 @@ type youtubeClientMock struct {
 type peopleClientMock struct {
 	getLoggedUserinfoStub func() string
 }
+type youtubeClientFactoryMock struct {
+	newClientStub func(auth.Oauth2Config, *http.Request) (YoutubeClientInterface, error)
+}
+type peopleClientFactoryMock struct {
+	newClientStub func(auth.Oauth2Config, *http.Request) (PeopleClientInterface, error)
+}
 
 func (y youtubeClientMock) getAndProcessSubscriptions(ctx context.Context,
 	processFunction func(*youtube.SubscriptionListResponse) error) error {
@@ -33,29 +41,41 @@ func (y youtubeClientMock) getLatestVideoFromPlaylist(playlistID string) (*youtu
 func (p peopleClientMock) getLoggedUserinfo() string {
 	return p.getLoggedUserinfoStub()
 }
+func (yf *youtubeClientFactoryMock) NewClient(config auth.Oauth2Config, req *http.Request) (YoutubeClientInterface, error) {
+	return yf.newClientStub(config, req)
+}
+func (pf *peopleClientFactoryMock) NewClient(config auth.Oauth2Config, req *http.Request) (PeopleClientInterface, error) {
+	return pf.newClientStub(config, req)
+}
 
-func TestGetYoutubeChannelsVideosNotification(t *testing.T) {
-	const (
-		serverBasepath = "http://localhost:8900"
-		successCase    = "success case"
-		redirectCase   = "redirect case"
-	)
-
+func TestGetYoutubeChannelsVideos(t *testing.T) {
 	// mocks
+	const serverBasepath = "http://localhost:8900"
 	recorder := httptest.NewRecorder()
 	req, err := http.NewRequest(http.MethodGet, "/check-youtube", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	clientSvc = clientService{
-		peopleSvc: &peopleClientMock{
-			getLoggedUserinfoStub: func() string {
-				return "usertest"
-			},
+	pcf := &peopleClientFactoryMock{
+		newClientStub: func(config auth.Oauth2Config, request *http.Request) (PeopleClientInterface, error) {
+			return &peopleClientMock{getLoggedUserinfoStub: func() string { return "usertest" }}, nil
+		},
+	}
+	ytcf := &youtubeClientFactoryMock{
+		newClientStub: func(config auth.Oauth2Config, request *http.Request) (YoutubeClientInterface, error) {
+			return &youtubeClientMock{
+				getAndProcessSubscriptionsStub: func(ctx context.Context,
+					f func(*youtube.SubscriptionListResponse) error) error {
+					return nil
+				},
+			}, nil
 		},
 	}
 
 	type args struct {
+		oauth2C        auth.Oauth2Config
+		ytcf           YoutubeClientFactoryInterface
+		pcf            PeopleClientFactoryInterface
 		serverBasepath string
 		htmlTemplate   string
 	}
@@ -65,16 +85,41 @@ func TestGetYoutubeChannelsVideosNotification(t *testing.T) {
 		want int
 	}{
 		{
-			name: successCase,
+			name: "success case",
 			args: args{
+				oauth2C:        auth.Oauth2Config{},
+				ytcf:           ytcf,
+				pcf:            pcf,
 				serverBasepath: serverBasepath,
 				htmlTemplate:   "",
 			},
 			want: http.StatusOK,
 		},
 		{
-			name: redirectCase,
+			name: "redirect case - error on creating youtube client",
 			args: args{
+				oauth2C: auth.Oauth2Config{},
+				ytcf: &youtubeClientFactoryMock{
+					newClientStub: func(config auth.Oauth2Config, request *http.Request) (YoutubeClientInterface, error) {
+						return nil, fmt.Errorf("testerror")
+					},
+				},
+				pcf:            pcf,
+				serverBasepath: serverBasepath,
+				htmlTemplate:   "",
+			},
+			want: http.StatusTemporaryRedirect,
+		},
+		{
+			name: "redirect case - error on creating youtube client",
+			args: args{
+				oauth2C: auth.Oauth2Config{},
+				ytcf:    ytcf,
+				pcf: &peopleClientFactoryMock{
+					newClientStub: func(config auth.Oauth2Config, request *http.Request) (PeopleClientInterface, error) {
+						return nil, fmt.Errorf("testerror")
+					},
+				},
 				serverBasepath: serverBasepath,
 				htmlTemplate:   "",
 			},
@@ -83,56 +128,11 @@ func TestGetYoutubeChannelsVideosNotification(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handlerFunction := GetYoutubeChannelsVideosNotification(tt.args.serverBasepath, tt.args.htmlTemplate)
-			switch tt.name {
-			case successCase:
-				clientSvc.youtubeSvc = &youtubeClientMock{
-					getAndProcessSubscriptionsStub: func(ctx context.Context, f func(*youtube.SubscriptionListResponse) error) error {
-						return nil
-					},
-				}
-			case redirectCase:
-				clientSvc.youtubeSvc = nil
-			}
+			handlerFunction := GetYoutubeChannelsVideos(tt.args.oauth2C, tt.args.ytcf, tt.args.pcf,
+				tt.args.serverBasepath, tt.args.htmlTemplate)
 			handlerFunction(recorder, req)
 			if recorder.Code != tt.want {
-				t.Errorf("GetYoutubeChannelsVideosNotification() = %v, want %v", recorder.Code, tt.want)
-			}
-		})
-	}
-}
-
-func TestInitServices(t *testing.T) {
-	type args struct {
-		tokenSource oauth2.TokenSource
-		client      *http.Client
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{
-			name: "success case",
-			args: args{
-				tokenSource: &testing_utils.TokenSourceMock{},
-				client:      nil,
-			},
-			wantErr: false,
-		},
-		{
-			name: "error case - nil tokenSource",
-			args: args{
-				tokenSource: nil,
-				client:      nil,
-			},
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := InitServices(tt.args.tokenSource, tt.args.client); (err != nil) != tt.wantErr {
-				t.Errorf("InitServices() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("GetYoutubeChannelsVideos() = %v, want %v", recorder.Code, tt.want)
 			}
 		})
 	}
@@ -149,10 +149,7 @@ func TestMarkAsViewed(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-
-	clientSvc = clientService{
-		client: server.Client(),
-	}
+	oauth2C := auth.Oauth2Config{Oauth2ConfigProvider: &testing_utils.Oauth2Mock{}}
 
 	createMockRequest := func(path string) *http.Request {
 		reqBody := callUrlRequest{
@@ -169,6 +166,10 @@ func TestMarkAsViewed(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		ctx := req.Context()
+		ctx = context.WithValue(ctx, sessions.TokenCtxKey{}, &oauth2.Token{})
+		req = req.WithContext(ctx)
+
 		return req
 	}
 
@@ -177,65 +178,77 @@ func TestMarkAsViewed(t *testing.T) {
 		failureCaseBadStatus      = "failure case - bad status code"
 		failureCaseMissingReqBody = "failure case - empty request body"
 		failureCaseBadRequest     = "failure case - bad request"
-		redirectToLoginPage       = "redirect to login"
+		tokenNotFound             = "failure case - token not found in context"
 	)
 	type args struct {
+		oauth2C        auth.Oauth2Config
 		serverBasepath string
 		recorder       *httptest.ResponseRecorder
 	}
 	tests := []struct {
 		name string
 		args args
+		want int
 	}{
 		{
 			name: successCase,
 			args: args{
+				oauth2C:        oauth2C,
 				serverBasepath: "http://localhost:8900",
 				recorder:       httptest.NewRecorder(),
 			},
+			want: http.StatusOK,
 		},
 		{
 			name: failureCaseBadStatus,
 			args: args{
+				oauth2C:        oauth2C,
 				serverBasepath: "http://localhost:8900",
 				recorder:       httptest.NewRecorder(),
 			},
+			want: http.StatusInternalServerError,
 		},
 		{
 			name: failureCaseMissingReqBody,
 			args: args{
+				oauth2C:        oauth2C,
 				serverBasepath: "http://localhost:8900",
 				recorder:       httptest.NewRecorder(),
 			},
+			want: http.StatusBadRequest,
 		},
 		{
 			name: failureCaseBadRequest,
 			args: args{
+				oauth2C:        oauth2C,
 				serverBasepath: "http://localhost:8900",
 				recorder:       httptest.NewRecorder(),
 			},
+			want: http.StatusBadRequest,
 		},
 		{
-			name: redirectToLoginPage,
+			name: tokenNotFound,
 			args: args{
+				oauth2C:        oauth2C,
 				serverBasepath: "http://localhost:8900",
 				recorder:       httptest.NewRecorder(),
 			},
+			want: http.StatusInternalServerError,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handlerFunction := MarkAsViewed(tt.args.serverBasepath)
+			handlerFunction := MarkAsViewed(tt.args.oauth2C, tt.args.serverBasepath)
 			switch tt.name {
 			case successCase:
 				handlerFunction(tt.args.recorder, createMockRequest("/ok"))
-				if tt.args.recorder.Code != http.StatusOK {
-					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, http.StatusOK)
+				if tt.args.recorder.Code != tt.want {
+					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
 				}
 			case failureCaseBadStatus:
 				handlerFunction(tt.args.recorder, createMockRequest("/ko"))
-				if tt.args.recorder.Code != http.StatusInternalServerError {
-					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, http.StatusInternalServerError)
+				if tt.args.recorder.Code != tt.want {
+					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
 				}
 			case failureCaseMissingReqBody:
 				reqEmptyBody, err := http.NewRequest(http.MethodPost, "/", nil)
@@ -243,8 +256,8 @@ func TestMarkAsViewed(t *testing.T) {
 					t.Fatal(err)
 				}
 				handlerFunction(tt.args.recorder, reqEmptyBody)
-				if tt.args.recorder.Code != http.StatusBadRequest {
-					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, http.StatusBadRequest)
+				if tt.args.recorder.Code != tt.want {
+					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
 				}
 			case failureCaseBadRequest:
 				req, err := http.NewRequest(http.MethodPost, "/", bytes.NewBuffer([]byte(`{invalid_json}`)))
@@ -252,14 +265,15 @@ func TestMarkAsViewed(t *testing.T) {
 					t.Fatal(err)
 				}
 				handlerFunction(tt.args.recorder, req)
-				if tt.args.recorder.Code != http.StatusBadRequest {
-					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, http.StatusBadRequest)
+				if tt.args.recorder.Code != tt.want {
+					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
 				}
-			case redirectToLoginPage:
-				clientSvc.client = nil
-				handlerFunction(tt.args.recorder, createMockRequest("/ok"))
-				if tt.args.recorder.Code != http.StatusTemporaryRedirect {
-					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, http.StatusTemporaryRedirect)
+			case tokenNotFound:
+				req := createMockRequest("/ok")
+				req = req.WithContext(context.Background())
+				handlerFunction(tt.args.recorder, req)
+				if tt.args.recorder.Code != tt.want {
+					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
 				}
 			}
 		})

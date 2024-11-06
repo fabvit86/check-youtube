@@ -1,33 +1,11 @@
-package utils
+package logging
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"path"
 	"strings"
 )
-
-// GetEnvOrFallback returns the env variable value or the fallback value if the env var is not set
-func GetEnvOrFallback(varName, fallback string) string {
-	if varValue, ok := os.LookupEnv(varName); ok {
-		return varValue
-	}
-
-	slog.Warn(fmt.Sprintf("env variable %s not set, fallback to %s", varName, fallback))
-	return fallback
-}
-
-// GetEnvOrErr returns the env variable value or an error if the env var is not set
-func GetEnvOrErr(varName string) (string, error) {
-	if varValue, ok := os.LookupEnv(varName); ok && varValue != "" {
-		return varValue, nil
-	}
-
-	err := fmt.Errorf("required env variable %s not set or empty", varName)
-	slog.Error(err.Error())
-	return "", err
-}
 
 // ConfigureLogger configure and set the slog logger. logLevel is case insensitive
 func ConfigureLogger(logLevel string) {
@@ -56,4 +34,9 @@ func ConfigureLogger(logLevel string) {
 	}
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, &loggerOpts)))
+}
+
+// FuncNameAttr returns a slog.Attr to add the function name to the log
+func FuncNameAttr(funcName string) slog.Attr {
+	return slog.String("function", funcName)
 }

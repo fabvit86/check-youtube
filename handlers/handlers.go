@@ -1,13 +1,14 @@
 package handlers
 
 import (
+	"checkYoutube/auth"
+	"checkYoutube/logging"
+	sessionsutils "checkYoutube/utils/sessions"
 	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"golang.org/x/oauth2"
-	"google.golang.org/api/option"
-	"google.golang.org/api/people/v1"
 	"google.golang.org/api/youtube/v3"
 	"html/template"
 	"log"
@@ -16,14 +17,6 @@ import (
 	"slices"
 	"strings"
 )
-
-type clientService struct {
-	peopleSvc  PeopleClientInterface
-	youtubeSvc YoutubeClientInterface
-	client     *http.Client
-}
-
-var clientSvc clientService
 
 type YTChannel struct {
 	Title            string
@@ -42,66 +35,36 @@ type callUrlRequest struct {
 	URL string `json:"url"`
 }
 
-// InitServices initializes the required client services using the given token source
-func InitServices(tokenSource oauth2.TokenSource, client *http.Client) error {
-	ctx := context.Background()
-
-	if tokenSource == nil {
-		err := fmt.Errorf("token source not initialized")
-		slog.Error(err.Error())
-		return err
-	}
-
-	// create YouTube service
-	youtubeSvc, err := youtube.NewService(
-		ctx,
-		option.WithTokenSource(tokenSource),
-	)
-	if err != nil {
-		slog.Error(fmt.Sprintf("unable to create youtube service: %s", err.Error()))
-		return err
-	}
-
-	// create people service
-	peopleSvc, err := people.NewService(
-		ctx,
-		option.WithTokenSource(tokenSource),
-	)
-	if err != nil {
-		slog.Error(fmt.Sprintf("unable to create people service: %s", err.Error()))
-		return err
-	}
-
-	clientSvc = clientService{
-		peopleSvc: &peopleClient{
-			svc: *peopleSvc,
-		},
-		youtubeSvc: &youtubeClient{
-			svc: *youtubeSvc,
-		},
-		client: client,
-	}
-
-	return nil
-}
-
-// GetYoutubeChannelsVideosNotification call YouTube API to check for new videos
-func GetYoutubeChannelsVideosNotification(serverBasepath, htmlTemplate string) http.HandlerFunc {
+// GetYoutubeChannelsVideos call YouTube API to check for new videos
+func GetYoutubeChannelsVideos(oauth2C auth.Oauth2Config, ytcf YoutubeClientFactoryInterface,
+	pcf PeopleClientFactoryInterface, serverBasepath, htmlTemplate string) http.HandlerFunc {
+	const funcName = "GetYoutubeChannelsVideos"
 	return func(w http.ResponseWriter, r *http.Request) {
 		filtered := r.URL.Query().Get("filtered") == "true"
 
-		if clientSvc.youtubeSvc == nil || clientSvc.peopleSvc == nil {
-			// redirect to login page
-			slog.Warn("services not initialized, redirecting user to login page")
+		// create youtube service
+		youtubeSvc, err := ytcf.NewClient(oauth2C, r)
+		if err != nil {
+			slog.Warn(fmt.Sprintf("unable to create youtube service, redirecting user to login page: %s",
+				err.Error()), logging.FuncNameAttr(funcName))
+			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+			return
+		}
+
+		// create people service
+		peopleSvc, err := pcf.NewClient(oauth2C, r)
+		if err != nil {
+			slog.Warn(fmt.Sprintf("unable to create people service, redirecting user to login page: %s",
+				err.Error()), logging.FuncNameAttr(funcName))
 			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
 			return
 		}
 
 		// get user info using the Google People API
-		username := clientSvc.peopleSvc.getLoggedUserinfo()
+		username := peopleSvc.getLoggedUserinfo()
 
 		// get YouTube subscriptions info
-		ytChannels := checkYoutube(clientSvc.youtubeSvc, filtered)
+		ytChannels := checkYoutube(youtubeSvc, filtered)
 
 		response := templateResponse{
 			YTChannels:     ytChannels,
@@ -123,11 +86,12 @@ func GetYoutubeChannelsVideosNotification(serverBasepath, htmlTemplate string) h
 
 // call YouTube API to check for new videos
 func checkYoutube(svc YoutubeClientInterface, filtered bool) []YTChannel {
+	const funcName = "checkYoutube"
 	response := make([]YTChannel, 0)
 	ctx := context.Background()
 
 	if svc == nil {
-		slog.Warn("uninitialized youtube service")
+		slog.Warn("uninitialized youtube service", logging.FuncNameAttr(funcName))
 		return nil
 	}
 
@@ -143,8 +107,8 @@ func checkYoutube(svc YoutubeClientInterface, filtered bool) []YTChannel {
 				go func(item *youtube.Subscription) {
 					err := processYouTubeChannel(svc, item, ch)
 					if err != nil {
-						slog.Warn("failed to retrieve latest YouTube video from playlist, "+
-							"skipping info for channel ", item.Snippet.Title)
+						slog.Warn(fmt.Sprintf("failed to retrieve latest YouTube video from playlist, "+
+							"skipping info for channel %s", item.Snippet.Title), logging.FuncNameAttr(funcName))
 					}
 				}(item)
 			} else {
@@ -159,12 +123,13 @@ func checkYoutube(svc YoutubeClientInterface, filtered bool) []YTChannel {
 		return nil
 	})
 	if err != nil {
-		slog.Error(fmt.Sprintf("error retrieving YouTube subscriptions list: %s", err.Error()))
+		slog.Error(fmt.Sprintf("error retrieving YouTube subscriptions list: %s", err.Error()),
+			logging.FuncNameAttr(funcName))
 		return response
 	}
 
 	if len(response) == 0 {
-		slog.Info("no new video published by user's YouTube channels")
+		slog.Info("no new video published by user's YouTube channels", logging.FuncNameAttr(funcName))
 	}
 
 	// sort results by title
@@ -177,7 +142,10 @@ func checkYoutube(svc YoutubeClientInterface, filtered bool) []YTChannel {
 
 // check a subscription for new videos and add it to the list
 func processYouTubeChannel(svc YoutubeClientInterface, item *youtube.Subscription, ch chan<- YTChannel) error {
-	const youTubeBasepath = "https://www.youtube.com"
+	const (
+		funcName        = "processYouTubeChannel"
+		youTubeBasepath = "https://www.youtube.com"
+	)
 	channelTitle := item.Snippet.Title
 	channelID := item.Snippet.ResourceId.ChannelId
 	responseItem := YTChannel{
@@ -193,13 +161,15 @@ func processYouTubeChannel(svc YoutubeClientInterface, item *youtube.Subscriptio
 	// get latest video info from the first playlist item
 	playlistItem, err := svc.getLatestVideoFromPlaylist(playlistID)
 	if err != nil {
-		slog.Error(fmt.Sprintf("error retrieving latest YouTube video from playlist: %s", err.Error()))
+		slog.Error(fmt.Sprintf("error retrieving latest YouTube video from playlist: %s", err.Error()),
+			logging.FuncNameAttr(funcName))
 		return err
 	}
 	if playlistItem != nil {
 		responseItem.LatestVideoURL = fmt.Sprintf("%s/watch?v=%s", youTubeBasepath, playlistItem.Snippet.ResourceId.VideoId)
 		responseItem.LatestVideoTitle = playlistItem.Snippet.Title
-		slog.Debug(fmt.Sprintf("found latest video for channel %s", channelTitle))
+		slog.Debug(fmt.Sprintf("found latest video for channel %s", channelTitle),
+			logging.FuncNameAttr(funcName))
 	}
 
 	ch <- responseItem
@@ -207,17 +177,12 @@ func processYouTubeChannel(svc YoutubeClientInterface, item *youtube.Subscriptio
 }
 
 // MarkAsViewed visits a subscription channel in the background to clear the notification of new videos
-func MarkAsViewed(serverBasepath string) http.HandlerFunc {
+func MarkAsViewed(oauth2C auth.Oauth2Config, serverBasepath string) http.HandlerFunc {
+	const funcName = "MarkAsViewed"
 	return func(w http.ResponseWriter, r *http.Request) {
-		if clientSvc.client == nil {
-			slog.Warn("http client not initialized, redirecting user to login page")
-			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
-			return
-		}
-
 		if r.Body == nil {
 			err := fmt.Errorf("empty request body")
-			slog.Warn(err.Error())
+			slog.Warn(err.Error(), logging.FuncNameAttr(funcName))
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -226,22 +191,41 @@ func MarkAsViewed(serverBasepath string) http.HandlerFunc {
 		dec := json.NewDecoder(r.Body)
 		err := dec.Decode(&req)
 		if err != nil {
-			slog.Error(err.Error())
+			slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
+		// retrieve token from context
+		token, tokenOk := r.Context().Value(sessionsutils.TokenCtxKey{}).(*oauth2.Token)
+		if !tokenOk {
+			err := fmt.Errorf("token not found in context")
+			slog.Error(err.Error(), logging.FuncNameAttr(funcName))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// create HTTP client
+		client := oauth2C.CreateHTTPClient(r.Context(), token)
+		if client == nil {
+			slog.Warn("http client not initialized, redirecting user to login page",
+				logging.FuncNameAttr(funcName))
+			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+			return
+		}
+
 		// visit the channel to mark its videos as viewed
-		res, err := clientSvc.client.Get(req.URL)
+		res, err := client.Get(req.URL)
 		if err != nil {
-			slog.Error(fmt.Sprintf("markAsViewed get request failed, error: %s", err.Error()))
+			slog.Error(fmt.Sprintf("markAsViewed get request failed, error: %s", err.Error()),
+				logging.FuncNameAttr(funcName))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		if res.StatusCode != http.StatusOK {
 			err = fmt.Errorf("call to youtube returned status: %d", res.StatusCode)
-			slog.Error(err.Error())
+			slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

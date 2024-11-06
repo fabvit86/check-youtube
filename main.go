@@ -3,10 +3,15 @@ package main
 import (
 	"checkYoutube/auth"
 	"checkYoutube/handlers"
-	"checkYoutube/utils"
+	"checkYoutube/logging"
+	"checkYoutube/utils/configs"
+	sessionsutils "checkYoutube/utils/sessions"
 	"embed"
 	_ "embed"
+	"encoding/gob"
 	"fmt"
+	"github.com/gorilla/sessions"
+	"golang.org/x/oauth2"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,43 +24,58 @@ var staticContent embed.FS
 var htmlTemplate []byte
 
 func main() {
+	const funcName = "main"
+
 	// configure logger
-	utils.ConfigureLogger(utils.GetEnvOrFallback("LOG_LEVEL", slog.LevelInfo.String()))
+	logging.ConfigureLogger(configs.GetEnvOrFallback("LOG_LEVEL", slog.LevelInfo.String()))
 
 	// get env veriables
-	port := utils.GetEnvOrFallback("SERVER_PORT", "8900")
+	port := configs.GetEnvOrFallback("SERVER_PORT", "8900")
 	serverBasepath := fmt.Sprintf("http://localhost:%s", port)
-	clientID, err := utils.GetEnvOrErr("CLIENT_ID")
+	clientID, err := configs.GetEnvOrErr("CLIENT_ID")
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
-	clientSecret, err := utils.GetEnvOrErr("CLIENT_SECRET")
+	clientSecret, err := configs.GetEnvOrErr("CLIENT_SECRET")
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
-	redirectURL, err := utils.GetEnvOrErr("OAUTH_LANDING_PAGE")
+	redirectURL, err := configs.GetEnvOrErr("OAUTH_LANDING_PAGE")
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
 
-	// init oauth2 config
-	auth.InitOauth2Config(clientID, clientSecret, redirectURL)
+	// session storage, used to store the data needed for the oauth2 login flow
+	sessionStore := sessions.NewCookieStore([]byte((os.Getenv("SESSION_KEY"))))
+	gob.Register(&oauth2.Token{})
+
+	// create oauth2 config
+	oauth2C := auth.CreateOauth2Config(clientID, clientSecret, redirectURL)
+
+	// client services factory
+	pcf := &handlers.PeopleClientFactory{}
+	ytcf := &handlers.YoutubeClientFactory{}
 
 	// register handlers
-	http.HandleFunc("/login", auth.Login)
-	http.HandleFunc("/landing", auth.CheckVerifierMiddleware(auth.Oauth2Redirect(serverBasepath), serverBasepath))
-	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification(serverBasepath, string(htmlTemplate)))
-	http.HandleFunc("/switch-account", auth.CheckVerifierMiddleware(auth.SwitchAccount(), serverBasepath))
-	http.HandleFunc("/mark-as-viewed", handlers.MarkAsViewed(serverBasepath))
+	http.HandleFunc("/login", auth.Login(oauth2C, sessionStore))
+	http.HandleFunc("/landing", auth.CheckVerifierMiddleware(
+		auth.Oauth2Redirect(oauth2C, sessionStore, serverBasepath), sessionStore, serverBasepath))
+	http.HandleFunc("/check-youtube", sessionsutils.CheckTokenMiddleware(
+		handlers.GetYoutubeChannelsVideos(oauth2C, ytcf, pcf, serverBasepath,
+			string(htmlTemplate)), sessionStore, serverBasepath))
+	http.HandleFunc("/switch-account", auth.CheckVerifierMiddleware(
+		auth.SwitchAccount(oauth2C), sessionStore, serverBasepath))
+	http.HandleFunc("/mark-as-viewed", sessionsutils.CheckTokenMiddleware(
+		handlers.MarkAsViewed(oauth2C, serverBasepath), sessionStore, serverBasepath))
 	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
 
 	// start the server
-	slog.Info(fmt.Sprintf("listening on port %s...", port))
+	slog.Info(fmt.Sprintf("listening on port %s...", port), logging.FuncNameAttr(funcName))
 	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), nil); err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
 }
