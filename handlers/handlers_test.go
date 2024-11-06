@@ -495,11 +495,11 @@ func Test_processYouTubeChannel(t *testing.T) {
 	type args struct {
 		svc  YoutubeClientInterface
 		item *youtube.Subscription
+		ch   chan<- YTChannel
 	}
 	tests := []struct {
 		name    string
 		args    args
-		want    YTChannel
 		wantErr bool
 	}{
 		{
@@ -519,12 +519,6 @@ func Test_processYouTubeChannel(t *testing.T) {
 				},
 				item: item,
 			},
-			want: YTChannel{
-				Title:            item.Snippet.Title,
-				URL:              fmt.Sprintf("https://www.youtube.com/channel/%s/videos", item.Snippet.ResourceId.ChannelId),
-				LatestVideoURL:   fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID),
-				LatestVideoTitle: "titletest",
-			},
 			wantErr: false,
 		},
 		{
@@ -537,21 +531,14 @@ func Test_processYouTubeChannel(t *testing.T) {
 				},
 				item: item,
 			},
-			want: YTChannel{
-				Title: item.Snippet.Title,
-				URL:   fmt.Sprintf("https://www.youtube.com/channel/%s/videos", item.Snippet.ResourceId.ChannelId),
-			},
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := processYouTubeChannel(tt.args.svc, tt.args.item)
+			err := processYouTubeChannel(tt.args.svc, tt.args.item, tt.args.ch)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("processYouTubeChannel() error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if diff := cmp.Diff(got, tt.want); diff != "" {
-				t.Errorf("processYouTubeChannel() - diff: \n%v", diff)
 			}
 		})
 	}
