@@ -1,20 +1,59 @@
 package handlers
 
 import (
+	"checkYoutube/auth"
 	"checkYoutube/logging"
+	sessionsutils "checkYoutube/utils/sessions"
 	"context"
 	"fmt"
+	"golang.org/x/oauth2"
+	"google.golang.org/api/option"
 	"google.golang.org/api/people/v1"
 	"google.golang.org/api/youtube/v3"
 	"log/slog"
+	"net/http"
 )
 
 type PeopleClientInterface interface {
 	getLoggedUserinfo() string
 }
 
+type PeopleClientFactoryInterface interface {
+	NewClient(oauth2C auth.Oauth2Config, r *http.Request) (PeopleClientInterface, error)
+}
+
 type peopleClient struct {
 	svc people.Service
+}
+
+type PeopleClientFactory struct{}
+
+// NewClient creates a new people service client
+func (p *PeopleClientFactory) NewClient(oauth2C auth.Oauth2Config, r *http.Request) (PeopleClientInterface, error) {
+	const funcName = "NewClient"
+
+	// get token from context
+	token, tokenOk := r.Context().Value(sessionsutils.TokenCtxKey{}).(*oauth2.Token)
+	if !tokenOk {
+		err := fmt.Errorf("token not found in context")
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
+		return nil, err
+	}
+
+	// create token source
+	ts := oauth2C.CreateTokenSource(r.Context(), token)
+
+	// create service
+	peopleSvc, err := people.NewService(context.Background(), option.WithTokenSource(ts))
+	if err != nil {
+		slog.Error(fmt.Sprintf("unable to create people service: %s", err.Error()),
+			logging.FuncNameAttr(funcName))
+		return nil, err
+	}
+
+	return &peopleClient{
+		svc: *peopleSvc,
+	}, nil
 }
 
 func (p *peopleClient) getLoggedUserinfo() string {
@@ -43,8 +82,42 @@ type YoutubeClientInterface interface {
 	getLatestVideoFromPlaylist(playlistID string) (*youtube.PlaylistItem, error)
 }
 
+type YoutubeClientFactoryInterface interface {
+	NewClient(oauth2C auth.Oauth2Config, r *http.Request) (YoutubeClientInterface, error)
+}
+
 type youtubeClient struct {
 	svc youtube.Service
+}
+
+type YoutubeClientFactory struct{}
+
+// NewClient creates a new youtube service client
+func (p *YoutubeClientFactory) NewClient(oauth2C auth.Oauth2Config, r *http.Request) (YoutubeClientInterface, error) {
+	const funcName = "NewClient"
+
+	// get token from context
+	token, tokenOk := r.Context().Value(sessionsutils.TokenCtxKey{}).(*oauth2.Token)
+	if !tokenOk {
+		err := fmt.Errorf("token not found in context")
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
+		return nil, err
+	}
+
+	// create token source
+	ts := oauth2C.CreateTokenSource(r.Context(), token)
+
+	// create service
+	youtubeSvc, err := youtube.NewService(context.Background(), option.WithTokenSource(ts))
+	if err != nil {
+		slog.Error(fmt.Sprintf("unable to create youtube service: %s", err.Error()),
+			logging.FuncNameAttr(funcName))
+		return nil, err
+	}
+
+	return &youtubeClient{
+		svc: *youtubeSvc,
+	}, nil
 }
 
 func (y *youtubeClient) getAndProcessSubscriptions(ctx context.Context,

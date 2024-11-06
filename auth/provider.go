@@ -10,21 +10,22 @@ import (
 )
 
 type Oauth2ConfigProvider interface {
-	generateVerifier() string
-	generateAuthURL(state, verifier string, promptAccountSelect bool) string
-	exchangeCodeWithTokenSource(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (oauth2.TokenSource, error)
-	createHTTPClient(ctx context.Context, token *oauth2.Token) *http.Client
+	GenerateVerifier() string
+	GenerateAuthURL(state, verifier string, promptAccountSelect bool) string
+	ExchangeCodeWithToken(ctx context.Context, code string, opts ...oauth2.AuthCodeOption) (*oauth2.Token, error)
+	CreateHTTPClient(ctx context.Context, token *oauth2.Token) *http.Client
+	CreateTokenSource(ctx context.Context, token *oauth2.Token) oauth2.TokenSource
 }
 
 type oauth2ConfigInstance struct {
 	oauth2Config oauth2.Config
 }
 
-func (o *oauth2ConfigInstance) generateVerifier() string {
+func (o *oauth2ConfigInstance) GenerateVerifier() string {
 	return oauth2.GenerateVerifier()
 }
 
-func (o *oauth2ConfigInstance) generateAuthURL(state, verifier string, promptAccountSelect bool) string {
+func (o *oauth2ConfigInstance) GenerateAuthURL(state, verifier string, promptAccountSelect bool) string {
 	opts := []oauth2.AuthCodeOption{
 		oauth2.AccessTypeOffline,
 		oauth2.S256ChallengeOption(verifier),
@@ -36,8 +37,8 @@ func (o *oauth2ConfigInstance) generateAuthURL(state, verifier string, promptAcc
 	return o.oauth2Config.AuthCodeURL(state, opts...)
 }
 
-func (o *oauth2ConfigInstance) exchangeCodeWithTokenSource(ctx context.Context, code string,
-	opts ...oauth2.AuthCodeOption) (oauth2.TokenSource, error) {
+func (o *oauth2ConfigInstance) ExchangeCodeWithToken(ctx context.Context, code string,
+	opts ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
 	const funcName = "exchangeCodeWithTokenSource"
 
 	token, err := o.oauth2Config.Exchange(ctx, code, opts...)
@@ -47,9 +48,13 @@ func (o *oauth2ConfigInstance) exchangeCodeWithTokenSource(ctx context.Context, 
 		return nil, err
 	}
 
-	return o.oauth2Config.TokenSource(ctx, token), nil
+	return token, nil
 }
 
-func (o *oauth2ConfigInstance) createHTTPClient(ctx context.Context, token *oauth2.Token) *http.Client {
+func (o *oauth2ConfigInstance) CreateHTTPClient(ctx context.Context, token *oauth2.Token) *http.Client {
 	return o.oauth2Config.Client(ctx, token)
+}
+
+func (o *oauth2ConfigInstance) CreateTokenSource(ctx context.Context, token *oauth2.Token) oauth2.TokenSource {
+	return o.oauth2Config.TokenSource(ctx, token)
 }

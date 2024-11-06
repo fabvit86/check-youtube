@@ -5,10 +5,13 @@ import (
 	"checkYoutube/handlers"
 	"checkYoutube/logging"
 	"checkYoutube/utils"
+	sessionsutils "checkYoutube/utils/sessions"
 	"embed"
 	_ "embed"
+	"encoding/gob"
 	"fmt"
 	"github.com/gorilla/sessions"
+	"golang.org/x/oauth2"
 	"log/slog"
 	"net/http"
 	"os"
@@ -47,18 +50,26 @@ func main() {
 
 	// session storage, used to store the data needed for the oauth2 login flow
 	sessionStore := sessions.NewCookieStore([]byte((os.Getenv("SESSION_KEY"))))
+	gob.Register(&oauth2.Token{})
 
 	// create oauth2 config
 	oauth2C := auth.CreateOauth2Config(clientID, clientSecret, redirectURL)
 
+	// client services factory
+	pcf := &handlers.PeopleClientFactory{}
+	ytcf := &handlers.YoutubeClientFactory{}
+
 	// register handlers
 	http.HandleFunc("/login", auth.Login(oauth2C, sessionStore))
 	http.HandleFunc("/landing", auth.CheckVerifierMiddleware(
-		auth.Oauth2Redirect(oauth2C, serverBasepath), sessionStore, serverBasepath))
-	http.HandleFunc("/check-youtube", handlers.GetYoutubeChannelsVideosNotification(serverBasepath, string(htmlTemplate)))
+		auth.Oauth2Redirect(oauth2C, sessionStore, serverBasepath), sessionStore, serverBasepath))
+	http.HandleFunc("/check-youtube", sessionsutils.CheckTokenMiddleware(
+		handlers.GetYoutubeChannelsVideos(oauth2C, ytcf, pcf, serverBasepath,
+			string(htmlTemplate)), sessionStore, serverBasepath))
 	http.HandleFunc("/switch-account", auth.CheckVerifierMiddleware(
 		auth.SwitchAccount(oauth2C), sessionStore, serverBasepath))
-	http.HandleFunc("/mark-as-viewed", handlers.MarkAsViewed(serverBasepath))
+	http.HandleFunc("/mark-as-viewed", sessionsutils.CheckTokenMiddleware(
+		handlers.MarkAsViewed(oauth2C, serverBasepath), sessionStore, serverBasepath))
 	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
 
 	// start the server

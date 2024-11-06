@@ -2,28 +2,20 @@ package auth
 
 import (
 	"checkYoutube/testing_utils"
+	sessionsutils "checkYoutube/utils/sessions"
 	"context"
+	"encoding/gob"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
-// mocks
-type oauth2Mock struct{}
-
-func (o *oauth2Mock) generateVerifier() string {
-	return "mockVerifier"
-}
-func (o *oauth2Mock) generateAuthURL(string, string, bool) string {
-	return "mockURL"
-}
-func (o *oauth2Mock) exchangeCodeWithTokenSource(context.Context, string, ...oauth2.AuthCodeOption) (oauth2.TokenSource, error) {
-	return &testing_utils.TokenSourceMock{}, nil
-}
-func (o *oauth2Mock) createHTTPClient(context.Context, *oauth2.Token) *http.Client {
-	return &http.Client{}
+func TestMain(m *testing.M) {
+	gob.Register(&oauth2.Token{})
+	os.Exit(m.Run())
 }
 
 func TestCreateOauth2Config(t *testing.T) {
@@ -61,7 +53,7 @@ func TestLogin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oauth2C := Oauth2Config{&oauth2Mock{}}
+	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
 	sessionStore := sessions.NewCookieStore([]byte(("test")))
 
 	type args struct {
@@ -71,6 +63,7 @@ func TestLogin(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
+		want int
 	}{
 		{
 			name: "success case",
@@ -78,6 +71,7 @@ func TestLogin(t *testing.T) {
 				oauth2C:      oauth2C,
 				sessionStore: sessionStore,
 			},
+			want: http.StatusTemporaryRedirect,
 		},
 	}
 	for _, tt := range tests {
@@ -85,8 +79,8 @@ func TestLogin(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			handlerFunction := Login(tt.args.oauth2C, tt.args.sessionStore)
 			handlerFunction(recorder, req)
-			if recorder.Code != http.StatusTemporaryRedirect {
-				t.Errorf("Login() = %v, want %v", recorder.Code, http.StatusTemporaryRedirect)
+			if recorder.Code != tt.want {
+				t.Errorf("Login() = %v, want %v", recorder.Code, tt.want)
 			}
 		})
 	}
@@ -98,12 +92,14 @@ func TestOauth2Redirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oauth2C := Oauth2Config{&oauth2Mock{}}
+	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
+	sessionStore := sessions.NewCookieStore([]byte(("test")))
 	const errorCase = "error case - verifier not found"
 
 	type args struct {
 		serverBasepath string
 		oauth2C        Oauth2Config
+		sessionStore   *sessions.CookieStore
 	}
 	tests := []struct {
 		name string
@@ -115,6 +111,7 @@ func TestOauth2Redirect(t *testing.T) {
 			args: args{
 				serverBasepath: "http://localhost:8900",
 				oauth2C:        oauth2C,
+				sessionStore:   sessionStore,
 			},
 			want: http.StatusSeeOther,
 		},
@@ -123,6 +120,7 @@ func TestOauth2Redirect(t *testing.T) {
 			args: args{
 				serverBasepath: "http://localhost:8900",
 				oauth2C:        oauth2C,
+				sessionStore:   sessionStore,
 			},
 			want: http.StatusInternalServerError,
 		},
@@ -135,7 +133,7 @@ func TestOauth2Redirect(t *testing.T) {
 				req = req.WithContext(addVerifierToContext(req.Context(), "verifier"))
 			}
 			recorder := httptest.NewRecorder()
-			handlerFunction := Oauth2Redirect(oauth2C, tt.args.serverBasepath)
+			handlerFunction := Oauth2Redirect(oauth2C, tt.args.sessionStore, tt.args.serverBasepath)
 			handlerFunction(recorder, req)
 			if recorder.Code != tt.want {
 				t.Errorf("Oauth2Redirect() = %v, want %v", recorder.Code, tt.want)
@@ -150,7 +148,7 @@ func TestSwitchAccount(t *testing.T) { // mocks
 	if err != nil {
 		t.Fatal(err)
 	}
-	oauth2C := Oauth2Config{&oauth2Mock{}}
+	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
 	const errorCase = "error case - verifier not found"
 
 	type args struct {
@@ -189,14 +187,21 @@ func TestSwitchAccount(t *testing.T) { // mocks
 	}
 }
 
-func Test_getToken(t *testing.T) {
+func Test_getAndStoreToken(t *testing.T) {
 	// mocks
-	oauth2C := Oauth2Config{&oauth2Mock{}}
+	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	sessionStore := sessions.NewCookieStore([]byte(("test")))
+	session, err := sessionStore.Get(req, sessionsutils.Oauth2SessionName)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	type args struct {
 		oauth2C  Oauth2Config
 		code     string
 		verifier string
+		session  *sessions.Session
 	}
 	tests := []struct {
 		name    string
@@ -205,14 +210,15 @@ func Test_getToken(t *testing.T) {
 	}{
 		{
 			name:    "success case",
-			args:    args{oauth2C: oauth2C, code: "test", verifier: "verifier"},
+			args:    args{oauth2C: oauth2C, session: session, code: "test", verifier: "verifier"},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := getToken(tt.args.oauth2C, tt.args.code, tt.args.verifier); (err != nil) != tt.wantErr {
-				t.Errorf("getToken() error = %v, wantErr %v", err, tt.wantErr)
+			if err := getAndStoreToken(tt.args.oauth2C, tt.args.session, tt.args.code,
+				tt.args.verifier); (err != nil) != tt.wantErr {
+				t.Errorf("getAndStoreToken() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -260,9 +266,11 @@ func TestCheckVerifierMiddleware(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			deleteOauth2SessionValue(t, sessionStore, req, verifierKey)
+			testing_utils.DeleteOauth2SessionValue(t, tt.args.sessionStore, req,
+				sessionsutils.Oauth2SessionName, sessionsutils.VerifierKey)
 			if tt.name == successCase {
-				setOauth2SessionValue(t, sessionStore, req, verifierKey, "verifier")
+				testing_utils.SetOauth2SessionValue(t, tt.args.sessionStore, req,
+					sessionsutils.Oauth2SessionName, sessionsutils.VerifierKey, "verifier")
 			}
 			handlerFunction := CheckVerifierMiddleware(tt.args.next, tt.args.sessionStore, tt.args.serverBasepath)
 			handlerFunction(recorder, req)
@@ -273,88 +281,6 @@ func TestCheckVerifierMiddleware(t *testing.T) {
 	}
 }
 
-func Test_getValueFromSession(t *testing.T) {
-	// mocks
-	req, err := http.NewRequest(http.MethodGet, "/", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const (
-		sessionValue = "testvalue"
-		successCase  = "success case"
-	)
-	sessionStore := sessions.NewCookieStore([]byte(("test")))
-
-	type args struct {
-		sessionStore *sessions.CookieStore
-		r            *http.Request
-		sessionName  string
-		key          string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    string
-		wantErr bool
-	}{
-		{
-			name: successCase,
-			args: args{
-				sessionStore: sessionStore,
-				r:            req,
-				sessionName:  oauth2SessionName,
-				key:          verifierKey,
-			},
-			want:    sessionValue,
-			wantErr: false,
-		},
-		{
-			name: "error case - invalid session name",
-			args: args{
-				sessionStore: sessionStore,
-				r:            req,
-				sessionName:  "",
-				key:          verifierKey,
-			},
-			want:    "",
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			deleteOauth2SessionValue(t, sessionStore, req, tt.args.key)
-			if tt.name == successCase {
-				// set a session value
-				setOauth2SessionValue(t, sessionStore, req, tt.args.key, sessionValue)
-			}
-			got, err := getValueFromSession(tt.args.sessionStore, tt.args.r, tt.args.sessionName, tt.args.key)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("getValueFromSession() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("getValueFromSession() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func addVerifierToContext(ctx context.Context, value string) context.Context {
 	return context.WithValue(ctx, verifierCtxKey{}, value)
-}
-
-func setOauth2SessionValue(t *testing.T, sessionStore *sessions.CookieStore, req *http.Request, key string, value string) {
-	session, err := sessionStore.Get(req, oauth2SessionName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	session.Values[key] = value
-}
-
-func deleteOauth2SessionValue(t *testing.T, sessionStore *sessions.CookieStore, req *http.Request, key string) {
-	session, err := sessionStore.Get(req, oauth2SessionName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delete(session.Values, key)
 }
