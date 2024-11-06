@@ -4,7 +4,7 @@ import (
 	"checkYoutube/auth"
 	"checkYoutube/handlers"
 	"checkYoutube/logging"
-	"checkYoutube/utils"
+	"checkYoutube/utils/configs"
 	sessionsutils "checkYoutube/utils/sessions"
 	"embed"
 	_ "embed"
@@ -27,22 +27,22 @@ func main() {
 	const funcName = "main"
 
 	// configure logger
-	logging.ConfigureLogger(utils.GetEnvOrFallback("LOG_LEVEL", slog.LevelInfo.String()))
+	logging.ConfigureLogger(configs.GetEnvOrFallback("LOG_LEVEL", slog.LevelInfo.String()))
 
 	// get env veriables
-	port := utils.GetEnvOrFallback("SERVER_PORT", "8900")
+	port := configs.GetEnvOrFallback("SERVER_PORT", "8900")
 	serverBasepath := fmt.Sprintf("http://localhost:%s", port)
-	clientID, err := utils.GetEnvOrErr("CLIENT_ID")
+	clientID, err := configs.GetEnvOrErr("CLIENT_ID")
 	if err != nil {
 		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
-	clientSecret, err := utils.GetEnvOrErr("CLIENT_SECRET")
+	clientSecret, err := configs.GetEnvOrErr("CLIENT_SECRET")
 	if err != nil {
 		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
-	redirectURL, err := utils.GetEnvOrErr("OAUTH_LANDING_PAGE")
+	redirectURL, err := configs.GetEnvOrErr("OAUTH_LANDING_PAGE")
 	if err != nil {
 		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
