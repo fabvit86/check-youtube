@@ -114,7 +114,7 @@ func Oauth2Redirect(oauth2C Oauth2Config, sessionStore *sessions.CookieStore, se
 
 // get auth token from OAUTH2 code exchange and store it in session
 func getAndStoreToken(oauth2C Oauth2Config, session *sessions.Session, code, verifier string) error {
-	const funcName = "getToken"
+	const funcName = "getAndStoreToken"
 	ctx := context.Background()
 
 	// get the token from token exchange
@@ -169,6 +169,63 @@ func CheckVerifierMiddleware(next http.Handler, sessionStore *sessions.CookieSto
 		// add verifier to context
 		ctx := r.Context()
 		ctx = context.WithValue(ctx, verifierCtxKey{}, verifier)
+		r = r.WithContext(ctx)
+
+		// serve next handler in the chain
+		next.ServeHTTP(w, r)
+	}
+}
+
+// CheckTokenMiddleware retrieves the token from the session, validates it and stores it in the context
+func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
+	sessionStore *sessions.CookieStore, serverBasepath string) http.HandlerFunc {
+	const funcName = "CheckTokenMiddleware"
+	return func(w http.ResponseWriter, r *http.Request) {
+		// get token from session
+		token, err := sessionsutils.GetValueFromSession[*oauth2.Token](sessionStore, r,
+			sessionsutils.Oauth2SessionName, sessionsutils.TokenKey)
+		if err != nil {
+			slog.Warn(fmt.Sprintf("session value with key '%s' is invalid, redirect to login: %s",
+				sessionsutils.TokenKey, err.Error()), logging.FuncNameAttr(funcName))
+			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+			return
+		}
+
+		// check if token is valid and try to refresh it
+		if !token.Valid() {
+			if token.RefreshToken != "" {
+				slog.Warn("token is nil or expired, trying to refresh it", logging.FuncNameAttr(funcName))
+				token, err = oauth2C.CreateTokenSource(r.Context(), token).Token()
+			} else {
+				err = fmt.Errorf("refresh token not available")
+			}
+			if err != nil {
+				slog.Error(fmt.Sprintf("unable to refresh token: %s, redirect to login", err),
+					logging.FuncNameAttr(funcName))
+				http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+				return
+			}
+			slog.Info("token has been refreshed")
+
+			// update token in session with refreshed token
+			session, err := sessionStore.Get(r, sessionsutils.Oauth2SessionName)
+			if err != nil {
+				slog.Error(fmt.Sprintf("failed to get session: %s", err.Error()), logging.FuncNameAttr(funcName))
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			session.Values[sessionsutils.TokenKey] = token
+			err = session.Save(r, w)
+			if err != nil {
+				slog.Error(fmt.Sprintf("failed to save session: %s", err.Error()), logging.FuncNameAttr(funcName))
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		// add token to context
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, sessionsutils.TokenCtxKey{}, token)
 		r = r.WithContext(ctx)
 
 		// serve next handler in the chain

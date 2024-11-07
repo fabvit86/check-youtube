@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
 
 func TestMain(m *testing.M) {
@@ -276,6 +277,89 @@ func TestCheckVerifierMiddleware(t *testing.T) {
 			handlerFunction(recorder, req)
 			if recorder.Code != tt.want {
 				t.Errorf("CheckVerifierMiddleware() = %v, want %v", recorder.Code, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckTokenMiddleware(t *testing.T) {
+	// mocks
+	req, err := http.NewRequest(http.MethodGet, "/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	sessionStore := sessions.NewCookieStore([]byte(("test")))
+
+	type args struct {
+		next           http.Handler
+		oauth2C        Oauth2Config
+		sessionStore   *sessions.CookieStore
+		serverBasepath string
+		token          *oauth2.Token
+		sessionName    string
+		recorder       *httptest.ResponseRecorder
+	}
+	tests := []struct {
+		name string
+		args args
+		want int
+	}{
+		{
+			name: "success case",
+			args: args{
+				next:           next,
+				oauth2C:        Oauth2Config{},
+				sessionStore:   sessionStore,
+				serverBasepath: "http://localhost:8900",
+				token: &oauth2.Token{
+					AccessToken: "test",
+				},
+				sessionName: sessionsutils.Oauth2SessionName,
+				recorder:    httptest.NewRecorder(),
+			},
+			want: http.StatusOK,
+		},
+		{
+			name: "success case - refresh token",
+			args: args{
+				next:           next,
+				oauth2C:        Oauth2Config{&testing_utils.Oauth2Mock{}},
+				sessionStore:   sessionStore,
+				serverBasepath: "http://localhost:8900",
+				token: &oauth2.Token{
+					AccessToken:  "test",
+					RefreshToken: "refreshtest",
+					Expiry:       time.Now().Add(time.Hour * -24),
+				},
+				sessionName: sessionsutils.Oauth2SessionName,
+				recorder:    httptest.NewRecorder(),
+			},
+			want: http.StatusOK,
+		},
+		{
+			name: "error case - invalid token",
+			args: args{
+				next:           next,
+				oauth2C:        Oauth2Config{},
+				sessionStore:   sessionStore,
+				serverBasepath: "http://localhost:8900",
+				token:          &oauth2.Token{},
+				sessionName:    sessionsutils.Oauth2SessionName,
+				recorder:       httptest.NewRecorder(),
+			},
+			want: http.StatusTemporaryRedirect,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testing_utils.SetOauth2SessionValue[*oauth2.Token](t, sessionStore, req, tt.args.sessionName,
+				sessionsutils.TokenKey, tt.args.token)
+			handlerFunction := CheckTokenMiddleware(tt.args.next, tt.args.oauth2C, tt.args.sessionStore,
+				tt.args.serverBasepath)
+			handlerFunction(tt.args.recorder, req)
+			if tt.args.recorder.Code != tt.want {
+				t.Errorf("CheckTokenMiddleware() = %v, want %v", tt.args.recorder.Code, tt.want)
 			}
 		})
 	}
