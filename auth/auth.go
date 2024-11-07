@@ -205,7 +205,7 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
 				http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
 				return
 			}
-			slog.Info("token has been refreshed")
+			slog.Info("token has been refreshed", logging.FuncNameAttr(funcName))
 
 			// update token in session with refreshed token
 			session, err := sessionStore.Get(r, sessionsutils.Oauth2SessionName)
