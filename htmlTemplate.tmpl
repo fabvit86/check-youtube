@@ -22,7 +22,7 @@
             <td><a href="{{ .URL }}" target=”_blank”>{{ .Title }}</a></td>
             <td><a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a></td>
             <td class="mark-as-viewed">
-                <button class="mark-as-viewed" onclick="callURL('{{ .URL }}', '{{ $.ServerBasepath }}');">Mark as viewed</button>
+                <button class="mark-as-viewed" onclick="callURL('{{ .ChannelID }}', '{{ $.ServerBasepath }}');">Mark as viewed</button>
             </td>
         </tr>
         {{ end }}

@@ -21,6 +21,7 @@ import (
 
 type YTChannel struct {
 	Title            string
+	ChannelID        string
 	URL              string
 	LatestVideoURL   string
 	LatestVideoTitle string
@@ -33,8 +34,10 @@ type templateResponse struct {
 }
 
 type callUrlRequest struct {
-	URL string `json:"url"`
+	ChannelID string `json:"channel_id"`
 }
+
+const youTubeBasepath = "https://www.youtube.com"
 
 // GetYoutubeChannelsVideos call YouTube API to check for new videos
 func GetYoutubeChannelsVideos(oauth2C auth.Oauth2Config, ytcf YoutubeClientFactoryInterface,
@@ -140,15 +143,13 @@ func checkYoutube(svc YoutubeClientInterface, filtered bool) []YTChannel {
 
 // check a subscription for new videos and add it to the list
 func processYouTubeChannel(svc YoutubeClientInterface, item *youtube.Subscription) (YTChannel, error) {
-	const (
-		funcName        = "processYouTubeChannel"
-		youTubeBasepath = "https://www.youtube.com"
-	)
+	const funcName = "processYouTubeChannel"
 	channelTitle := item.Snippet.Title
 	channelID := item.Snippet.ResourceId.ChannelId
 	responseItem := YTChannel{
-		Title: channelTitle,
-		URL:   fmt.Sprintf("%s/channel/%s/videos", youTubeBasepath, channelID),
+		Title:     channelTitle,
+		ChannelID: channelID,
+		URL:       fmt.Sprintf("%s/channel/%s/videos", youTubeBasepath, channelID),
 	}
 
 	// the playlist ID can be obtained by changing the second letter of the channel ID
@@ -212,7 +213,8 @@ func MarkAsViewed(oauth2C auth.Oauth2Config, serverBasepath string) http.Handler
 		}
 
 		// visit the channel to mark its videos as viewed
-		res, err := client.Get(req.URL)
+		url := fmt.Sprintf("%s/channel/%s/videos", youTubeBasepath, req.ChannelID)
+		res, err := client.Get(url)
 		if err != nil {
 			slog.Error(fmt.Sprintf("markAsViewed get request failed, error: %s", err.Error()),
 				logging.FuncNameAttr(funcName))

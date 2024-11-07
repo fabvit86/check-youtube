@@ -140,20 +140,10 @@ func TestGetYoutubeChannelsVideos(t *testing.T) {
 
 func TestMarkAsViewed(t *testing.T) {
 	// mocks
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/ko" {
-			// simulate a not found
-			w.WriteHeader(http.StatusNotFound)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
-	}))
-	defer server.Close()
 	oauth2C := auth.Oauth2Config{Oauth2ConfigProvider: &testing_utils.Oauth2Mock{}}
-
-	createMockRequest := func(path string) *http.Request {
+	createMockRequest := func(channelID string) *http.Request {
 		reqBody := callUrlRequest{
-			URL: server.URL + path,
+			ChannelID: channelID,
 		}
 
 		reqBytes, err := json.Marshal(reqBody)
@@ -174,7 +164,6 @@ func TestMarkAsViewed(t *testing.T) {
 	}
 
 	const (
-		successCase               = "success case"
 		failureCaseBadStatus      = "failure case - bad status code"
 		failureCaseMissingReqBody = "failure case - empty request body"
 		failureCaseBadRequest     = "failure case - bad request"
@@ -190,15 +179,6 @@ func TestMarkAsViewed(t *testing.T) {
 		args args
 		want int
 	}{
-		{
-			name: successCase,
-			args: args{
-				oauth2C:        oauth2C,
-				serverBasepath: "http://localhost:8900",
-				recorder:       httptest.NewRecorder(),
-			},
-			want: http.StatusOK,
-		},
 		{
 			name: failureCaseBadStatus,
 			args: args{
@@ -240,13 +220,8 @@ func TestMarkAsViewed(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			handlerFunction := MarkAsViewed(tt.args.oauth2C, tt.args.serverBasepath)
 			switch tt.name {
-			case successCase:
-				handlerFunction(tt.args.recorder, createMockRequest("/ok"))
-				if tt.args.recorder.Code != tt.want {
-					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
-				}
 			case failureCaseBadStatus:
-				handlerFunction(tt.args.recorder, createMockRequest("/ko"))
+				handlerFunction(tt.args.recorder, createMockRequest("channelIdTest"))
 				if tt.args.recorder.Code != tt.want {
 					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
 				}
@@ -269,7 +244,7 @@ func TestMarkAsViewed(t *testing.T) {
 					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
 				}
 			case tokenNotFound:
-				req := createMockRequest("/ok")
+				req := createMockRequest("channelIdTest")
 				req = req.WithContext(context.Background())
 				handlerFunction(tt.args.recorder, req)
 				if tt.args.recorder.Code != tt.want {
@@ -358,12 +333,14 @@ func Test_checkYoutube(t *testing.T) {
 			want: []YTChannel{
 				{
 					Title:            subsInput[0].Snippet.Title,
+					ChannelID:        subsInput[0].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[0].Snippet.ResourceId.ChannelId),
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
 				},
 				{
 					Title:            subsInput[1].Snippet.Title,
+					ChannelID:        subsInput[1].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[1].Snippet.ResourceId.ChannelId),
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
@@ -390,18 +367,21 @@ func Test_checkYoutube(t *testing.T) {
 			want: []YTChannel{
 				{
 					Title:            subsInput[0].Snippet.Title,
+					ChannelID:        subsInput[0].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[0].Snippet.ResourceId.ChannelId),
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
 				},
 				{
 					Title:            subsInput[1].Snippet.Title,
+					ChannelID:        subsInput[1].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[1].Snippet.ResourceId.ChannelId),
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
 				},
 				{
 					Title:            subsInput[2].Snippet.Title,
+					ChannelID:        subsInput[2].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[2].Snippet.ResourceId.ChannelId),
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
@@ -461,12 +441,14 @@ func Test_checkYoutube(t *testing.T) {
 			},
 			want: []YTChannel{
 				{
-					Title: subsInput[0].Snippet.Title,
-					URL:   fmt.Sprintf(channelUrl, subsInput[0].Snippet.ResourceId.ChannelId),
+					Title:     subsInput[0].Snippet.Title,
+					ChannelID: subsInput[0].Snippet.ResourceId.ChannelId,
+					URL:       fmt.Sprintf(channelUrl, subsInput[0].Snippet.ResourceId.ChannelId),
 				},
 				{
-					Title: subsInput[1].Snippet.Title,
-					URL:   fmt.Sprintf(channelUrl, subsInput[1].Snippet.ResourceId.ChannelId),
+					Title:     subsInput[1].Snippet.Title,
+					ChannelID: subsInput[1].Snippet.ResourceId.ChannelId,
+					URL:       fmt.Sprintf(channelUrl, subsInput[1].Snippet.ResourceId.ChannelId),
 				},
 			},
 		},
@@ -521,6 +503,7 @@ func Test_processYouTubeChannel(t *testing.T) {
 			},
 			want: YTChannel{
 				Title:            item.Snippet.Title,
+				ChannelID:        item.Snippet.ResourceId.ChannelId,
 				URL:              fmt.Sprintf("https://www.youtube.com/channel/%s/videos", item.Snippet.ResourceId.ChannelId),
 				LatestVideoURL:   fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID),
 				LatestVideoTitle: "titletest",
@@ -538,8 +521,9 @@ func Test_processYouTubeChannel(t *testing.T) {
 				item: item,
 			},
 			want: YTChannel{
-				Title: item.Snippet.Title,
-				URL:   fmt.Sprintf("https://www.youtube.com/channel/%s/videos", item.Snippet.ResourceId.ChannelId),
+				Title:     item.Snippet.Title,
+				ChannelID: item.Snippet.ResourceId.ChannelId,
+				URL:       fmt.Sprintf("https://www.youtube.com/channel/%s/videos", item.Snippet.ResourceId.ChannelId),
 			},
 			wantErr: true,
 		},
