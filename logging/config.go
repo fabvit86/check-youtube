@@ -40,3 +40,8 @@ func ConfigureLogger(logLevel string) {
 func FuncNameAttr(funcName string) slog.Attr {
 	return slog.String("function", funcName)
 }
+
+// UserAttr returns a slog.Attr to add the logged user's username to the log
+func UserAttr(username string) slog.Attr {
+	return slog.String("user", username)
+}

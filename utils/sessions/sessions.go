@@ -32,7 +32,7 @@ func GetValueFromSession[T any](sessionStore *sessions.CookieStore, r *http.Requ
 	value, verifierOk := session.Values[key].(T)
 	if !verifierOk {
 		err = fmt.Errorf("session value with key '%s' is nil or of the wrong type", key)
-		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
+		slog.Warn(err.Error(), logging.FuncNameAttr(funcName))
 		return value, err
 	}
 

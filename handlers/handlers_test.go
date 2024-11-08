@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"checkYoutube/auth"
+	"checkYoutube/clients"
 	"checkYoutube/testing_utils"
 	"checkYoutube/utils/sessions"
 	"context"
@@ -21,48 +22,33 @@ type youtubeClientMock struct {
 	getAndProcessSubscriptionsStub func(context.Context, func(*youtube.SubscriptionListResponse) error) error
 	getLatestVideoFromPlaylistStub func(string) (*youtube.PlaylistItem, error)
 }
-type peopleClientMock struct {
-	getLoggedUserinfoStub func() string
-}
 type youtubeClientFactoryMock struct {
-	newClientStub func(auth.Oauth2Config, *http.Request) (YoutubeClientInterface, error)
-}
-type peopleClientFactoryMock struct {
-	newClientStub func(auth.Oauth2Config, *http.Request) (PeopleClientInterface, error)
+	newClientStub func(oauth2.TokenSource) (clients.YoutubeClientInterface, error)
 }
 
-func (y youtubeClientMock) getAndProcessSubscriptions(ctx context.Context,
+func (y youtubeClientMock) GetAndProcessSubscriptions(ctx context.Context,
 	processFunction func(*youtube.SubscriptionListResponse) error) error {
 	return y.getAndProcessSubscriptionsStub(ctx, processFunction)
 }
-func (y youtubeClientMock) getLatestVideoFromPlaylist(playlistID string) (*youtube.PlaylistItem, error) {
+func (y youtubeClientMock) GetLatestVideoFromPlaylist(playlistID string) (*youtube.PlaylistItem, error) {
 	return y.getLatestVideoFromPlaylistStub(playlistID)
 }
-func (p peopleClientMock) getLoggedUserinfo() string {
-	return p.getLoggedUserinfoStub()
-}
-func (yf *youtubeClientFactoryMock) NewClient(config auth.Oauth2Config, req *http.Request) (YoutubeClientInterface, error) {
-	return yf.newClientStub(config, req)
-}
-func (pf *peopleClientFactoryMock) NewClient(config auth.Oauth2Config, req *http.Request) (PeopleClientInterface, error) {
-	return pf.newClientStub(config, req)
+func (yf *youtubeClientFactoryMock) NewClient(ts oauth2.TokenSource) (clients.YoutubeClientInterface, error) {
+	return yf.newClientStub(ts)
 }
 
 func TestGetYoutubeChannelsVideos(t *testing.T) {
 	// mocks
 	const serverBasepath = "http://localhost:8900"
+	const tokenNotFound = "redirect case - token not found in context"
+	oauth2C := auth.Oauth2Config{Oauth2ConfigProvider: &testing_utils.Oauth2Mock{}}
 	recorder := httptest.NewRecorder()
 	req, err := http.NewRequest(http.MethodGet, "/check-youtube", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pcf := &peopleClientFactoryMock{
-		newClientStub: func(config auth.Oauth2Config, request *http.Request) (PeopleClientInterface, error) {
-			return &peopleClientMock{getLoggedUserinfoStub: func() string { return "usertest" }}, nil
-		},
-	}
 	ytcf := &youtubeClientFactoryMock{
-		newClientStub: func(config auth.Oauth2Config, request *http.Request) (YoutubeClientInterface, error) {
+		newClientStub: func(ts oauth2.TokenSource) (clients.YoutubeClientInterface, error) {
 			return &youtubeClientMock{
 				getAndProcessSubscriptionsStub: func(ctx context.Context,
 					f func(*youtube.SubscriptionListResponse) error) error {
@@ -74,8 +60,7 @@ func TestGetYoutubeChannelsVideos(t *testing.T) {
 
 	type args struct {
 		oauth2C        auth.Oauth2Config
-		ytcf           YoutubeClientFactoryInterface
-		pcf            PeopleClientFactoryInterface
+		ytcf           clients.YoutubeClientFactoryInterface
 		serverBasepath string
 		htmlTemplate   string
 	}
@@ -87,9 +72,8 @@ func TestGetYoutubeChannelsVideos(t *testing.T) {
 		{
 			name: "success case",
 			args: args{
-				oauth2C:        auth.Oauth2Config{},
+				oauth2C:        oauth2C,
 				ytcf:           ytcf,
-				pcf:            pcf,
 				serverBasepath: serverBasepath,
 				htmlTemplate:   "",
 			},
@@ -98,28 +82,22 @@ func TestGetYoutubeChannelsVideos(t *testing.T) {
 		{
 			name: "redirect case - error on creating youtube client",
 			args: args{
-				oauth2C: auth.Oauth2Config{},
+				oauth2C: oauth2C,
 				ytcf: &youtubeClientFactoryMock{
-					newClientStub: func(config auth.Oauth2Config, request *http.Request) (YoutubeClientInterface, error) {
+					newClientStub: func(ts oauth2.TokenSource) (clients.YoutubeClientInterface, error) {
 						return nil, fmt.Errorf("testerror")
 					},
 				},
-				pcf:            pcf,
 				serverBasepath: serverBasepath,
 				htmlTemplate:   "",
 			},
 			want: http.StatusTemporaryRedirect,
 		},
 		{
-			name: "redirect case - error on creating youtube client",
+			name: tokenNotFound,
 			args: args{
-				oauth2C: auth.Oauth2Config{},
-				ytcf:    ytcf,
-				pcf: &peopleClientFactoryMock{
-					newClientStub: func(config auth.Oauth2Config, request *http.Request) (PeopleClientInterface, error) {
-						return nil, fmt.Errorf("testerror")
-					},
-				},
+				oauth2C:        oauth2C,
+				ytcf:           ytcf,
 				serverBasepath: serverBasepath,
 				htmlTemplate:   "",
 			},
@@ -128,7 +106,12 @@ func TestGetYoutubeChannelsVideos(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handlerFunction := GetYoutubeChannelsVideos(tt.args.oauth2C, tt.args.ytcf, tt.args.pcf,
+			if tt.name == tokenNotFound {
+				req = req.WithContext(context.Background())
+			} else {
+				req = req.WithContext(addTokenInfoToContext(req.Context(), &auth.TokenInfo{Token: &oauth2.Token{}}))
+			}
+			handlerFunction := GetYoutubeChannelsVideos(tt.args.oauth2C, tt.args.ytcf,
 				tt.args.serverBasepath, tt.args.htmlTemplate)
 			handlerFunction(recorder, req)
 			if recorder.Code != tt.want {
@@ -213,7 +196,7 @@ func TestMarkAsViewed(t *testing.T) {
 				serverBasepath: "http://localhost:8900",
 				recorder:       httptest.NewRecorder(),
 			},
-			want: http.StatusInternalServerError,
+			want: http.StatusTemporaryRedirect,
 		},
 	}
 	for _, tt := range tests {
@@ -221,7 +204,9 @@ func TestMarkAsViewed(t *testing.T) {
 			handlerFunction := MarkAsViewed(tt.args.oauth2C, tt.args.serverBasepath)
 			switch tt.name {
 			case failureCaseBadStatus:
-				handlerFunction(tt.args.recorder, createMockRequest("channelIdTest"))
+				req := createMockRequest("channelIdTest")
+				req = req.WithContext(addTokenInfoToContext(req.Context(), &auth.TokenInfo{Token: &oauth2.Token{}}))
+				handlerFunction(tt.args.recorder, req)
 				if tt.args.recorder.Code != tt.want {
 					t.Errorf("MarkAsViewed() = %v, want %v", tt.args.recorder.Code, tt.want)
 				}
@@ -236,6 +221,7 @@ func TestMarkAsViewed(t *testing.T) {
 				}
 			case failureCaseBadRequest:
 				req, err := http.NewRequest(http.MethodPost, "/", bytes.NewBuffer([]byte(`{invalid_json}`)))
+				req = req.WithContext(addTokenInfoToContext(req.Context(), &auth.TokenInfo{Token: &oauth2.Token{}}))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -305,8 +291,9 @@ func Test_checkYoutube(t *testing.T) {
 	}
 
 	type args struct {
-		svc      YoutubeClientInterface
+		svc      clients.YoutubeClientInterface
 		filtered bool
+		username string
 	}
 	tests := []struct {
 		name string
@@ -455,7 +442,7 @@ func Test_checkYoutube(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := checkYoutube(tt.args.svc, tt.args.filtered)
+			got := checkYoutube(tt.args.svc, tt.args.filtered, tt.args.username)
 			if diff := cmp.Diff(got, tt.want); diff != "" {
 				t.Errorf("checkYoutube() - diff: \n%v", diff)
 			}
@@ -475,8 +462,9 @@ func Test_processYouTubeChannel(t *testing.T) {
 	}
 
 	type args struct {
-		svc  YoutubeClientInterface
-		item *youtube.Subscription
+		svc      clients.YoutubeClientInterface
+		item     *youtube.Subscription
+		username string
 	}
 	tests := []struct {
 		name    string
@@ -530,7 +518,7 @@ func Test_processYouTubeChannel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := processYouTubeChannel(tt.args.svc, tt.args.item)
+			got, err := processYouTubeChannel(tt.args.svc, tt.args.item, tt.args.username)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("processYouTubeChannel() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -539,4 +527,8 @@ func Test_processYouTubeChannel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func addTokenInfoToContext(ctx context.Context, value *auth.TokenInfo) context.Context {
+	return context.WithValue(ctx, sessions.TokenCtxKey{}, value)
 }

@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"checkYoutube/clients"
 	"checkYoutube/testing_utils"
 	sessionsutils "checkYoutube/utils/sessions"
 	"context"
 	"encoding/gob"
+	"fmt"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"net/http"
@@ -14,8 +16,22 @@ import (
 	"time"
 )
 
+type peopleClientMock struct {
+	getLoggedUserinfoStub func() string
+}
+type peopleClientFactoryMock struct {
+	newClientStub func(oauth2.TokenSource) (clients.PeopleClientInterface, error)
+}
+
+func (p peopleClientMock) GetLoggedUserinfo() string {
+	return p.getLoggedUserinfoStub()
+}
+func (pf *peopleClientFactoryMock) NewClient(ts oauth2.TokenSource) (clients.PeopleClientInterface, error) {
+	return pf.newClientStub(ts)
+}
+
 func TestMain(m *testing.M) {
-	gob.Register(&oauth2.Token{})
+	gob.Register(&TokenInfo{})
 	os.Exit(m.Run())
 }
 
@@ -96,11 +112,17 @@ func TestOauth2Redirect(t *testing.T) {
 	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
 	sessionStore := sessions.NewCookieStore([]byte(("test")))
 	const errorCase = "error case - verifier not found"
+	pcf := &peopleClientFactoryMock{
+		newClientStub: func(ts oauth2.TokenSource) (clients.PeopleClientInterface, error) {
+			return &peopleClientMock{getLoggedUserinfoStub: func() string { return "usertest" }}, nil
+		},
+	}
 
 	type args struct {
-		serverBasepath string
 		oauth2C        Oauth2Config
 		sessionStore   *sessions.CookieStore
+		pcf            clients.PeopleClientFactoryInterface
+		serverBasepath string
 	}
 	tests := []struct {
 		name string
@@ -113,8 +135,23 @@ func TestOauth2Redirect(t *testing.T) {
 				serverBasepath: "http://localhost:8900",
 				oauth2C:        oauth2C,
 				sessionStore:   sessionStore,
+				pcf:            pcf,
 			},
 			want: http.StatusSeeOther,
+		},
+		{
+			name: "error case - error on creating people client",
+			args: args{
+				serverBasepath: "http://localhost:8900",
+				oauth2C:        oauth2C,
+				sessionStore:   sessionStore,
+				pcf: &peopleClientFactoryMock{
+					newClientStub: func(ts oauth2.TokenSource) (clients.PeopleClientInterface, error) {
+						return nil, fmt.Errorf("testerror")
+					},
+				},
+			},
+			want: http.StatusInternalServerError,
 		},
 		{
 			name: errorCase,
@@ -122,6 +159,7 @@ func TestOauth2Redirect(t *testing.T) {
 				serverBasepath: "http://localhost:8900",
 				oauth2C:        oauth2C,
 				sessionStore:   sessionStore,
+				pcf:            pcf,
 			},
 			want: http.StatusInternalServerError,
 		},
@@ -134,7 +172,7 @@ func TestOauth2Redirect(t *testing.T) {
 				req = req.WithContext(addVerifierToContext(req.Context(), "verifier"))
 			}
 			recorder := httptest.NewRecorder()
-			handlerFunction := Oauth2Redirect(oauth2C, tt.args.sessionStore, tt.args.serverBasepath)
+			handlerFunction := Oauth2Redirect(oauth2C, tt.args.sessionStore, tt.args.pcf, tt.args.serverBasepath)
 			handlerFunction(recorder, req)
 			if recorder.Code != tt.want {
 				t.Errorf("Oauth2Redirect() = %v, want %v", recorder.Code, tt.want)
@@ -183,43 +221,6 @@ func TestSwitchAccount(t *testing.T) { // mocks
 			handlerFunction(recorder, req)
 			if recorder.Code != tt.want {
 				t.Errorf("SwitchAccount() = %v, want %v", recorder.Code, tt.want)
-			}
-		})
-	}
-}
-
-func Test_getAndStoreToken(t *testing.T) {
-	// mocks
-	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
-	req, err := http.NewRequest(http.MethodGet, "/", nil)
-	sessionStore := sessions.NewCookieStore([]byte(("test")))
-	session, err := sessionStore.Get(req, sessionsutils.Oauth2SessionName)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	type args struct {
-		oauth2C  Oauth2Config
-		code     string
-		verifier string
-		session  *sessions.Session
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{
-			name:    "success case",
-			args:    args{oauth2C: oauth2C, session: session, code: "test", verifier: "verifier"},
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if err := getAndStoreToken(tt.args.oauth2C, tt.args.session, tt.args.code,
-				tt.args.verifier); (err != nil) != tt.wantErr {
-				t.Errorf("getAndStoreToken() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
@@ -290,13 +291,14 @@ func TestCheckTokenMiddleware(t *testing.T) {
 	}
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	sessionStore := sessions.NewCookieStore([]byte(("test")))
+	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
 
 	type args struct {
 		next           http.Handler
 		oauth2C        Oauth2Config
 		sessionStore   *sessions.CookieStore
 		serverBasepath string
-		token          *oauth2.Token
+		tokenInfo      *TokenInfo
 		sessionName    string
 		recorder       *httptest.ResponseRecorder
 	}
@@ -309,12 +311,13 @@ func TestCheckTokenMiddleware(t *testing.T) {
 			name: "success case",
 			args: args{
 				next:           next,
-				oauth2C:        Oauth2Config{},
+				oauth2C:        oauth2C,
 				sessionStore:   sessionStore,
 				serverBasepath: "http://localhost:8900",
-				token: &oauth2.Token{
-					AccessToken: "test",
-				},
+				tokenInfo: &TokenInfo{
+					Token: &oauth2.Token{
+						AccessToken: "test",
+					}},
 				sessionName: sessionsutils.Oauth2SessionName,
 				recorder:    httptest.NewRecorder(),
 			},
@@ -324,14 +327,15 @@ func TestCheckTokenMiddleware(t *testing.T) {
 			name: "success case - refresh token",
 			args: args{
 				next:           next,
-				oauth2C:        Oauth2Config{&testing_utils.Oauth2Mock{}},
+				oauth2C:        oauth2C,
 				sessionStore:   sessionStore,
 				serverBasepath: "http://localhost:8900",
-				token: &oauth2.Token{
-					AccessToken:  "test",
-					RefreshToken: "refreshtest",
-					Expiry:       time.Now().Add(time.Hour * -24),
-				},
+				tokenInfo: &TokenInfo{
+					Token: &oauth2.Token{
+						AccessToken:  "test",
+						RefreshToken: "refreshtest",
+						Expiry:       time.Now().Add(time.Hour * -24),
+					}},
 				sessionName: sessionsutils.Oauth2SessionName,
 				recorder:    httptest.NewRecorder(),
 			},
@@ -341,10 +345,10 @@ func TestCheckTokenMiddleware(t *testing.T) {
 			name: "error case - invalid token",
 			args: args{
 				next:           next,
-				oauth2C:        Oauth2Config{},
+				oauth2C:        oauth2C,
 				sessionStore:   sessionStore,
 				serverBasepath: "http://localhost:8900",
-				token:          &oauth2.Token{},
+				tokenInfo:      &TokenInfo{},
 				sessionName:    sessionsutils.Oauth2SessionName,
 				recorder:       httptest.NewRecorder(),
 			},
@@ -353,8 +357,8 @@ func TestCheckTokenMiddleware(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testing_utils.SetOauth2SessionValue[*oauth2.Token](t, sessionStore, req, tt.args.sessionName,
-				sessionsutils.TokenKey, tt.args.token)
+			testing_utils.SetOauth2SessionValue[*TokenInfo](t, sessionStore, req, tt.args.sessionName,
+				sessionsutils.TokenKey, tt.args.tokenInfo)
 			handlerFunction := CheckTokenMiddleware(tt.args.next, tt.args.oauth2C, tt.args.sessionStore,
 				tt.args.serverBasepath)
 			handlerFunction(tt.args.recorder, req)
