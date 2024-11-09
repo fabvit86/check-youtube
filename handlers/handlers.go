@@ -4,7 +4,6 @@ import (
 	"checkYoutube/auth"
 	"checkYoutube/clients"
 	"checkYoutube/logging"
-	sessionsutils "checkYoutube/utils/sessions"
 	"cmp"
 	"context"
 	"encoding/json"
@@ -47,7 +46,7 @@ func GetYoutubeChannelsVideos(oauth2C auth.Oauth2Config, ytcf clients.YoutubeCli
 		filtered := r.URL.Query().Get("filtered") == "true"
 
 		// get token from context
-		tokenInfo, tokenOk := r.Context().Value(sessionsutils.TokenCtxKey{}).(*auth.TokenInfo)
+		tokenInfo, tokenOk := r.Context().Value(auth.TokenCtxKey{}).(*auth.TokenInfo)
 		if !tokenOk {
 			slog.Warn(fmt.Sprintf("token not found in context, redirecting user to login page"),
 				logging.FuncNameAttr(funcName))
@@ -196,7 +195,7 @@ func MarkAsViewed(oauth2C auth.Oauth2Config, serverBasepath string) http.Handler
 		}
 
 		// get token from context
-		tokenInfo, tokenOk := r.Context().Value(sessionsutils.TokenCtxKey{}).(*auth.TokenInfo)
+		tokenInfo, tokenOk := r.Context().Value(auth.TokenCtxKey{}).(*auth.TokenInfo)
 		if !tokenOk {
 			slog.Warn(fmt.Sprintf("token not found in context, redirecting user to login page"),
 				logging.FuncNameAttr(funcName))

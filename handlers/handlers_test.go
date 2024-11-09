@@ -5,7 +5,6 @@ import (
 	"checkYoutube/auth"
 	"checkYoutube/clients"
 	"checkYoutube/testing_utils"
-	"checkYoutube/utils/sessions"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -140,7 +139,7 @@ func TestMarkAsViewed(t *testing.T) {
 		}
 
 		ctx := req.Context()
-		ctx = context.WithValue(ctx, sessions.TokenCtxKey{}, &oauth2.Token{})
+		ctx = context.WithValue(ctx, auth.TokenCtxKey{}, &oauth2.Token{})
 		req = req.WithContext(ctx)
 
 		return req
@@ -530,5 +529,5 @@ func Test_processYouTubeChannel(t *testing.T) {
 }
 
 func addTokenInfoToContext(ctx context.Context, value *auth.TokenInfo) context.Context {
-	return context.WithValue(ctx, sessions.TokenCtxKey{}, value)
+	return context.WithValue(ctx, auth.TokenCtxKey{}, value)
 }

@@ -1,6 +1,7 @@
 package sessions
 
 import (
+	"checkYoutube/errors"
 	"checkYoutube/logging"
 	"fmt"
 	"github.com/gorilla/sessions"
@@ -14,8 +15,6 @@ const (
 	TokenKey          = "token"
 )
 
-type TokenCtxKey struct{}
-
 // GetValueFromSession returns the data having the given key from the session store
 func GetValueFromSession[T any](sessionStore *sessions.CookieStore, r *http.Request, sessionName, key string) (T, error) {
 	const funcName = "GetValueFromSession"
@@ -24,7 +23,8 @@ func GetValueFromSession[T any](sessionStore *sessions.CookieStore, r *http.Requ
 	// retrieve session from cookie
 	session, err := sessionStore.Get(r, sessionName)
 	if err != nil {
-		slog.Error(fmt.Sprintf("failed to get session: %s", err.Error()), logging.FuncNameAttr(funcName))
+		err = errors.GetSessionErr{Err: err}
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		return value, err
 	}
 

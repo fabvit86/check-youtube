@@ -2,9 +2,11 @@ package auth
 
 import (
 	"checkYoutube/clients"
+	"checkYoutube/errors"
 	"checkYoutube/logging"
 	sessionsutils "checkYoutube/utils/sessions"
 	"context"
+	errors2 "errors"
 	"fmt"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
@@ -28,6 +30,12 @@ type TokenInfo struct {
 
 type verifierCtxKey struct{}
 
+func (verifierCtxKey) String() string { return "verifier" }
+
+type TokenCtxKey struct{}
+
+func (TokenCtxKey) String() string { return "tokenInfo" }
+
 // CreateOauth2Config creates a new Oauth2Config instance
 func CreateOauth2Config(clientID, clientSecret, redirectURL string) Oauth2Config {
 	return Oauth2Config{
@@ -50,7 +58,8 @@ func Login(oauth2C Oauth2Config, sessionStore *sessions.CookieStore) http.Handle
 		// add and retrieve session
 		session, err := sessionStore.Get(r, sessionsutils.Oauth2SessionName)
 		if err != nil {
-			slog.Error(fmt.Sprintf("failed to get session: %s", err.Error()), logging.FuncNameAttr(funcName))
+			err = errors.GetSessionErr{Err: err}
+			slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -63,7 +72,8 @@ func Login(oauth2C Oauth2Config, sessionStore *sessions.CookieStore) http.Handle
 		session.Options.HttpOnly = true
 		err = session.Save(r, w)
 		if err != nil {
-			slog.Error(fmt.Sprintf("failed to save session: %s", err.Error()), logging.FuncNameAttr(funcName))
+			err = errors.SaveSessionErr{Err: err}
+			slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -82,7 +92,7 @@ func Oauth2Redirect(oauth2C Oauth2Config, sessionStore *sessions.CookieStore,
 		// retrieve verifier from context
 		verifier, verifierOk := r.Context().Value(verifierCtxKey{}).(string)
 		if !verifierOk {
-			err := fmt.Errorf("verifier not found in context")
+			err := errors.ValueNotFoundInCtx{Key: verifierCtxKey{}}
 			slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -127,8 +137,8 @@ func Oauth2Redirect(oauth2C Oauth2Config, sessionStore *sessions.CookieStore,
 		// save session
 		err = session.Save(r, w)
 		if err != nil {
-			slog.Error(fmt.Sprintf("failed to save session: %s", err.Error()),
-				logging.FuncNameAttr(funcName), logging.UserAttr(username))
+			err = errors.SaveSessionErr{Err: err}
+			slog.Error(err.Error(), logging.FuncNameAttr(funcName), logging.UserAttr(username))
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -146,9 +156,9 @@ func SwitchAccount(oauth2C Oauth2Config) http.HandlerFunc {
 		// retrieve verifier from context
 		verifier, verifierOk := r.Context().Value(verifierCtxKey{}).(string)
 		if !verifierOk {
-			errMsg := "verifier not found in context"
-			slog.Error(errMsg, logging.FuncNameAttr(funcName))
-			http.Error(w, errMsg, http.StatusInternalServerError)
+			err := errors.ValueNotFoundInCtx{Key: verifierCtxKey{}}
+			slog.Error(err.Error(), logging.FuncNameAttr(funcName))
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
@@ -166,10 +176,14 @@ func CheckVerifierMiddleware(next http.Handler, sessionStore *sessions.CookieSto
 		verifier, err := sessionsutils.GetValueFromSession[string](sessionStore, r,
 			sessionsutils.Oauth2SessionName, sessionsutils.VerifierKey)
 		if err != nil {
-			// redirect to login page
-			slog.Warn(fmt.Sprintf("failed to retrieve verifier from session, redirect to login: %s",
-				err.Error()), logging.FuncNameAttr(funcName))
-			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+			if errors2.As(err, &errors.GetSessionErr{}) {
+				slog.Error(err.Error(), logging.FuncNameAttr(funcName))
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			} else {
+				// redirect to login
+				slog.Warn(fmt.Sprintf("redirect to login: %s", err.Error()), logging.FuncNameAttr(funcName))
+				http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+			}
 			return
 		}
 
@@ -192,9 +206,14 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
 		tokenInfo, err := sessionsutils.GetValueFromSession[*TokenInfo](sessionStore, r,
 			sessionsutils.Oauth2SessionName, sessionsutils.TokenKey)
 		if err != nil {
-			slog.Warn(fmt.Sprintf("session value with key '%s' is invalid, redirect to login: %s",
-				sessionsutils.TokenKey, err.Error()), logging.FuncNameAttr(funcName))
-			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+			if errors2.As(err, &errors.GetSessionErr{}) {
+				slog.Error(err.Error(), logging.FuncNameAttr(funcName))
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			} else {
+				// redirect to login
+				slog.Warn(fmt.Sprintf("redirect to login: %s", err.Error()), logging.FuncNameAttr(funcName))
+				http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+			}
 			return
 		}
 
@@ -208,7 +227,7 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
 				err = fmt.Errorf("refresh token not available")
 			}
 			if err != nil {
-				slog.Error(fmt.Sprintf("unable to refresh token: %s, redirect to login", err),
+				slog.Error(fmt.Sprintf("unable to refresh token, redirect to login: %s", err.Error()),
 					logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
 				http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
 				return
@@ -219,16 +238,16 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
 			// update tokenInfo in session with refreshed token
 			session, err := sessionStore.Get(r, sessionsutils.Oauth2SessionName)
 			if err != nil {
-				slog.Error(fmt.Sprintf("failed to get session: %s", err.Error()),
-					logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+				err = errors.GetSessionErr{Err: err}
+				slog.Error(err.Error(), logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			session.Values[sessionsutils.TokenKey] = tokenInfo
 			err = session.Save(r, w)
 			if err != nil {
-				slog.Error(fmt.Sprintf("failed to save session: %s", err.Error()),
-					logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+				err = errors.SaveSessionErr{Err: err}
+				slog.Error(err.Error(), logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -236,7 +255,7 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
 
 		// add token to context
 		ctx := r.Context()
-		ctx = context.WithValue(ctx, sessionsutils.TokenCtxKey{}, tokenInfo)
+		ctx = context.WithValue(ctx, TokenCtxKey{}, tokenInfo)
 		r = r.WithContext(ctx)
 
 		// serve next handler in the chain

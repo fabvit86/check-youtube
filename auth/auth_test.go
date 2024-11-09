@@ -285,6 +285,7 @@ func TestCheckVerifierMiddleware(t *testing.T) {
 
 func TestCheckTokenMiddleware(t *testing.T) {
 	// mocks
+	const wrongSessionValueCase = "error case - wrong session value type"
 	req, err := http.NewRequest(http.MethodGet, "/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -354,11 +355,34 @@ func TestCheckTokenMiddleware(t *testing.T) {
 			},
 			want: http.StatusTemporaryRedirect,
 		},
+		{
+			name: wrongSessionValueCase,
+			args: args{
+				next:           next,
+				oauth2C:        oauth2C,
+				sessionStore:   sessionStore,
+				serverBasepath: "http://localhost:8900",
+				tokenInfo: &TokenInfo{
+					Token: &oauth2.Token{
+						AccessToken:  "test",
+						RefreshToken: "refreshtest",
+						Expiry:       time.Now().Add(time.Hour * -24),
+					}},
+				sessionName: sessionsutils.Oauth2SessionName,
+				recorder:    httptest.NewRecorder(),
+			},
+			want: http.StatusTemporaryRedirect,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testing_utils.SetOauth2SessionValue[*TokenInfo](t, sessionStore, req, tt.args.sessionName,
-				sessionsutils.TokenKey, tt.args.tokenInfo)
+			if tt.name == wrongSessionValueCase {
+				testing_utils.SetOauth2SessionValue[int](t, sessionStore, req, tt.args.sessionName,
+					sessionsutils.TokenKey, 0)
+			} else {
+				testing_utils.SetOauth2SessionValue[*TokenInfo](t, sessionStore, req, tt.args.sessionName,
+					sessionsutils.TokenKey, tt.args.tokenInfo)
+			}
 			handlerFunction := CheckTokenMiddleware(tt.args.next, tt.args.oauth2C, tt.args.sessionStore,
 				tt.args.serverBasepath)
 			handlerFunction(tt.args.recorder, req)
