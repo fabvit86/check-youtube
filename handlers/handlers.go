@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 )
 
 type YTChannel struct {
@@ -97,13 +98,14 @@ func checkYoutube(svc clients.YoutubeClientInterface, filtered bool, username st
 	// get user's subscriptions list from the YouTube API
 	err := svc.GetAndProcessSubscriptions(ctx, func(subs *youtube.SubscriptionListResponse) error {
 		// collect channels having published new videos
+		wg := &sync.WaitGroup{}
 		ch := make(chan YTChannel)
-		var itemsCount int
 		for _, item := range subs.Items {
 			newItems := item.ContentDetails.NewItemCount
 			if !filtered || newItems > 0 {
-				itemsCount++
+				wg.Add(1)
 				go func(item *youtube.Subscription) {
+					defer wg.Done()
 					err := processYouTubeChannel(svc, item, ch, username)
 					if err != nil {
 						slog.Warn(fmt.Sprintf("failed to retrieve latest YouTube video from playlist, "+
@@ -116,8 +118,15 @@ func checkYoutube(svc clients.YoutubeClientInterface, filtered bool, username st
 			}
 		}
 
-		for i := 0; i < itemsCount; i++ {
-			response = append(response, <-ch)
+		// close the channel when all goroutines are done
+		go func() {
+			wg.Wait()
+			close(ch)
+		}()
+
+		// read processed items from channel and add them to the response
+		for item := range ch {
+			response = append(response, item)
 		}
 
 		return nil
@@ -163,6 +172,7 @@ func processYouTubeChannel(svc clients.YoutubeClientInterface, item *youtube.Sub
 	if err != nil {
 		slog.Error(fmt.Sprintf("error retrieving latest YouTube video from playlist: %s", err.Error()),
 			logging.FuncNameAttr(funcName), logging.UserAttr(username))
+		ch <- responseItem
 		return err
 	}
 	if playlistItem != nil {

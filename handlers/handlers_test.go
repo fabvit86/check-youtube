@@ -450,7 +450,11 @@ func Test_checkYoutube(t *testing.T) {
 }
 
 func Test_processYouTubeChannel(t *testing.T) {
-	const videoID = "videoidtest"
+	const (
+		channelUrl = "https://www.youtube.com/channel/%s/videos"
+		videoUrl   = "https://www.youtube.com/watch?v=%s"
+		videoID    = "videoidtest"
+	)
 	item := &youtube.Subscription{
 		Snippet: &youtube.SubscriptionSnippet{
 			ResourceId: &youtube.ResourceId{
@@ -463,12 +467,13 @@ func Test_processYouTubeChannel(t *testing.T) {
 	type args struct {
 		svc      clients.YoutubeClientInterface
 		item     *youtube.Subscription
-		ch   chan<- YTChannel
+		ch       chan YTChannel
 		username string
 	}
 	tests := []struct {
 		name    string
 		args    args
+		want    YTChannel
 		wantErr bool
 	}{
 		{
@@ -487,6 +492,14 @@ func Test_processYouTubeChannel(t *testing.T) {
 					},
 				},
 				item: item,
+				ch:   make(chan YTChannel),
+			},
+			want: YTChannel{
+				Title:            item.Snippet.Title,
+				ChannelID:        item.Snippet.ResourceId.ChannelId,
+				URL:              fmt.Sprintf(channelUrl, item.Snippet.ResourceId.ChannelId),
+				LatestVideoURL:   fmt.Sprintf(videoUrl, videoID),
+				LatestVideoTitle: "titletest",
 			},
 			wantErr: false,
 		},
@@ -499,15 +512,27 @@ func Test_processYouTubeChannel(t *testing.T) {
 					},
 				},
 				item: item,
+				ch:   make(chan YTChannel),
+			},
+			want: YTChannel{
+				Title:     item.Snippet.Title,
+				ChannelID: item.Snippet.ResourceId.ChannelId,
+				URL:       fmt.Sprintf(channelUrl, item.Snippet.ResourceId.ChannelId),
 			},
 			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := processYouTubeChannel(tt.args.svc, tt.args.item, tt.args.ch, tt.args.username)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("processYouTubeChannel() error = %v, wantErr %v", err, tt.wantErr)
+			go func() {
+				err := processYouTubeChannel(tt.args.svc, tt.args.item, tt.args.ch, tt.args.username)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("processYouTubeChannel() error = %v, wantErr %v", err, tt.wantErr)
+				}
+			}()
+			got := <-tt.args.ch
+			if diff := cmp.Diff(got, tt.want); diff != "" {
+				t.Errorf("processYouTubeChannel() - diff: \n%v", diff)
 			}
 		})
 	}
