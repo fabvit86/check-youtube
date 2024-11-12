@@ -99,6 +99,7 @@ func checkYoutube(svc clients.YoutubeClientInterface, filtered bool, username st
 	err := svc.GetAndProcessSubscriptions(ctx, func(subs *youtube.SubscriptionListResponse) error {
 		// collect channels having published new videos
 		wg := &sync.WaitGroup{}
+		mutex := sync.RWMutex{}
 		for _, item := range subs.Items {
 			newItems := item.ContentDetails.NewItemCount
 			if !filtered || newItems > 0 {
@@ -111,7 +112,9 @@ func checkYoutube(svc clients.YoutubeClientInterface, filtered bool, username st
 							"skipping info for channel %s", responseItem.Title),
 							logging.FuncNameAttr(funcName), logging.UserAttr(username))
 					}
+					mutex.Lock()
 					response = append(response, responseItem)
+					mutex.Unlock()
 				}(item)
 			} else {
 				break
