@@ -6,7 +6,6 @@ import (
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"testing"
 )
@@ -14,68 +13,6 @@ import (
 func TestMain(m *testing.M) {
 	gob.Register(&oauth2.Token{})
 	os.Exit(m.Run())
-}
-
-func TestCheckTokenMiddleware(t *testing.T) {
-	// mocks
-	req, err := http.NewRequest(http.MethodGet, "/", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
-	sessionStore := sessions.NewCookieStore([]byte(("test")))
-
-	type args struct {
-		next           http.Handler
-		sessionStore   *sessions.CookieStore
-		serverBasepath string
-		token          *oauth2.Token
-		sessionName    string
-		recorder       *httptest.ResponseRecorder
-	}
-	tests := []struct {
-		name string
-		args args
-		want int
-	}{
-		{
-			name: "success case",
-			args: args{
-				next:           next,
-				sessionStore:   sessionStore,
-				serverBasepath: "http://localhost:8900",
-				token: &oauth2.Token{
-					AccessToken: "test",
-				},
-				sessionName: Oauth2SessionName,
-				recorder:    httptest.NewRecorder(),
-			},
-			want: http.StatusOK,
-		},
-		{
-			name: "error case - invalid token",
-			args: args{
-				next:           next,
-				sessionStore:   sessionStore,
-				serverBasepath: "http://localhost:8900",
-				token:          &oauth2.Token{},
-				sessionName:    Oauth2SessionName,
-				recorder:       httptest.NewRecorder(),
-			},
-			want: http.StatusTemporaryRedirect,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testing_utils.SetOauth2SessionValue[*oauth2.Token](t, sessionStore, req, tt.args.sessionName,
-				TokenKey, tt.args.token)
-			handlerFunction := CheckTokenMiddleware(tt.args.next, tt.args.sessionStore, tt.args.serverBasepath)
-			handlerFunction(tt.args.recorder, req)
-			if tt.args.recorder.Code != tt.want {
-				t.Errorf("CheckTokenMiddleware() = %v, want %v", tt.args.recorder.Code, tt.want)
-			}
-		})
-	}
 }
 
 func TestGetValueFromSession(t *testing.T) {

@@ -23,14 +23,14 @@ function jsScript() {
     }
 }
 
-// remove table row when user clicks on "mark as viewed"
-async function callURL(url, serverBasepath) {
+// call the backend endpoint and remove table row when user clicks on "mark as viewed"
+async function callURL(channelID, serverBasepath) {
     try {
         const trID = event.target.closest("tr").id;
         let totVids = Number(document.getElementById("tot-channels").textContent);
         await fetch(serverBasepath + "/mark-as-viewed", {
             method: 'POST',
-            body: JSON.stringify({url: url})
+            body: JSON.stringify({channel_id: channelID})
         });
         document.getElementById(trID).remove();
         document.getElementById("tot-channels").textContent = totVids - 1;
