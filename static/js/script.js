@@ -1,4 +1,42 @@
 function jsScript() {
+    const serverBasepath = document.querySelector('meta[name="server-basepath"]')
+        .getAttribute('content');
+
+    // handle filters events
+    handleFilters()
+
+    // convert timestamps to locale
+    convertTimestampsToLocale()
+
+    // hadle mark as viewed buttons event
+    markAsViewed(serverBasepath)
+}
+
+// call the backend endpoint and remove table row when user clicks on "mark as viewed"
+function markAsViewed(serverBasepath) {
+    const markAsViewedButtons = document.querySelectorAll('button.mark-as-viewed')
+    markAsViewedButtons.forEach((btn) => {
+        btn.addEventListener('click', async function(event) {
+            const channelID = btn.dataset.channelid;
+            const trID = event.target.closest("tr").id;
+            try {
+                let totVids = Number(document.getElementById("tot-channels").textContent);
+                await fetch(serverBasepath + "/mark-as-viewed", {
+                    method: 'POST',
+                    body: JSON.stringify({channel_id: channelID})
+                });
+                document.getElementById(trID).remove();
+                document.getElementById("tot-channels").textContent = totVids - 1;
+            } catch (e) {
+                console.log(e);
+                return e;
+            }
+        });
+    });
+}
+
+// handle results filters
+function handleFilters() {
     // reload page when user clicks on "show all" or "show filtered"
     document.getElementById("filters-div").addEventListener("click", function(e) {
         if(e.target.id === "show-all-btn") {
@@ -23,19 +61,10 @@ function jsScript() {
     }
 }
 
-// call the backend endpoint and remove table row when user clicks on "mark as viewed"
-async function callURL(channelID, serverBasepath) {
-    try {
-        const trID = event.target.closest("tr").id;
-        let totVids = Number(document.getElementById("tot-channels").textContent);
-        await fetch(serverBasepath + "/mark-as-viewed", {
-            method: 'POST',
-            body: JSON.stringify({channel_id: channelID})
-        });
-        document.getElementById(trID).remove();
-        document.getElementById("tot-channels").textContent = totVids - 1;
-    } catch (e) {
-        console.log(e);
-        return e;
-    }
+// convert timestamps to locale
+function convertTimestampsToLocale() {
+    const timestampElements = document.querySelectorAll('span[data-ts]');
+    timestampElements.forEach((element) => {
+        element.innerText = new Date(element.dataset.ts).toLocaleString();
+    });
 }

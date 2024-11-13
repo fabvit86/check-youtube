@@ -1,5 +1,6 @@
 <head>
 	<meta charset="utf-8">
+    <meta name="server-basepath" content="{{ $.ServerBasepath }}">
 	<title>CheckYoutube</title>
 	<link rel="stylesheet" href="/static/css/style.css">
     <script type="text/javascript" src="/static/js/script.js"></script>
@@ -14,15 +15,16 @@
 <div id="content-div">
 <table>
     <thead>
-        <tr><th>Channel</th><th>Lastest Video</th><th class="mark-as-viewed">Mark as viewed</th></tr>
+        <tr><th>Channel</th><th>Lastest Video</th><th>Publish date</th><th class="mark-as-viewed">Mark as viewed</th></tr>
     </thead>
     <tbody>
         {{ range $index, $value := .YTChannels }}
         <tr id="tr-{{ $index }}">
             <td><a href="{{ .URL }}" target=”_blank”>{{ .Title }}</a></td>
             <td><a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a></td>
+            <td><span class="timestamp" data-ts="{{ .LatestVideoPublishedAt }}"></span></td>
             <td class="mark-as-viewed">
-                <button class="mark-as-viewed" onclick="callURL('{{ .ChannelID }}', '{{ $.ServerBasepath }}');">Mark as viewed</button>
+                <button class="mark-as-viewed" data-channelid="{{ .ChannelID }}">Mark as viewed</button>
             </td>
         </tr>
         {{ end }}
