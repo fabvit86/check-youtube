@@ -2,11 +2,13 @@
 
 A very simple test project written in Go that showcases the lastest video from each user's YouTube subscription that has new ("unread") content.
 
+![example](example_img.jpg)
+
 The code is not intended to be well polished or production-ready, and it's just a playground to demostrate how to:
 - implement a simple oauth2 flow for user authorization
 - interact with Google People and YouTube service APIs
 - run a simple web server
-- use Go HTML templates to render the results
+- use Go HTML templates and pure Javascript to render the results
 
 ### Pre-requirements
 - create a project using Google Cloud Console https://console.cloud.google.com/
