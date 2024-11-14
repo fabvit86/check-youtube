@@ -13,9 +13,14 @@
     <div class="btn" id="show-filtered-btn">FILTERED</div>
 </div>
 <div id="content-div">
-<table>
+<table id="videos-table">
     <thead>
-        <tr><th>Channel</th><th>Lastest Video</th><th>Publish date</th><th class="mark-as-viewed">Mark as viewed</th></tr>
+        <tr>
+            <th id="th-channel" class="sortable">Channel <span class="sort-arrow">&uarr;</span></th>
+            <th>Lastest Video</th>
+            <th id="th-ts" class="sortable">Publish date <span class="sort-arrow">&udarr;</span></th>
+            <th class="mark-as-viewed">Mark as viewed</th>
+        </tr>
     </thead>
     <tbody>
         {{ range $index, $value := .YTChannels }}
