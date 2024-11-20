@@ -3,10 +3,10 @@ package main
 import (
 	"checkYoutube/auth"
 	"checkYoutube/clients"
+	"checkYoutube/configs"
 	"checkYoutube/handlers"
 	"checkYoutube/logging"
-	"checkYoutube/utils/configs"
-	"embed"
+	"checkYoutube/web"
 	_ "embed"
 	"encoding/gob"
 	"fmt"
@@ -15,12 +15,6 @@ import (
 	"net/http"
 	"os"
 )
-
-//go:embed static
-var staticContent embed.FS
-
-//go:embed htmlTemplate.tmpl
-var htmlTemplate []byte
 
 func main() {
 	const funcName = "main"
@@ -63,13 +57,13 @@ func main() {
 	http.HandleFunc("/landing", auth.CheckVerifierMiddleware(
 		auth.Oauth2Redirect(oauth2C, sessionStore, pcf, serverBasepath), sessionStore, serverBasepath))
 	http.HandleFunc("/check-youtube", auth.CheckTokenMiddleware(
-		handlers.GetYoutubeChannelsVideos(oauth2C, ytcf, serverBasepath, string(htmlTemplate)),
+		handlers.GetYoutubeChannelsVideos(oauth2C, ytcf, serverBasepath, string(web.HtmlTemplate)),
 		oauth2C, sessionStore, serverBasepath))
 	http.HandleFunc("/switch-account", auth.CheckVerifierMiddleware(
 		auth.SwitchAccount(oauth2C), sessionStore, serverBasepath))
 	http.HandleFunc("/mark-as-viewed", auth.CheckTokenMiddleware(
 		handlers.MarkAsViewed(oauth2C, serverBasepath), oauth2C, sessionStore, serverBasepath))
-	http.Handle("/static/", http.FileServer(http.FS(staticContent)))
+	http.Handle("/static/", http.FileServer(http.FS(web.StaticContent)))
 
 	// start the server
 	slog.Info(fmt.Sprintf("listening on port %s...", port), logging.FuncNameAttr(funcName))

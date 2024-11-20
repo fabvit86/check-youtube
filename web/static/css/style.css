@@ -23,6 +23,10 @@ th, td {
     border: 1px solid white;
 }
 
+th.sortable:hover {
+    cursor: pointer;
+}
+
 div#filters-div {
     padding-bottom: 10px;
 }

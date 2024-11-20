@@ -19,11 +19,12 @@ import (
 )
 
 type YTChannel struct {
-	Title            string
-	ChannelID        string
-	URL              string
-	LatestVideoURL   string
-	LatestVideoTitle string
+	Title                  string
+	ChannelID              string
+	URL                    string
+	LatestVideoURL         string
+	LatestVideoTitle       string
+	LatestVideoPublishedAt string
 }
 
 type templateResponse struct {
@@ -179,6 +180,7 @@ func processYouTubeChannel(svc clients.YoutubeClientInterface, item *youtube.Sub
 		responseItem.LatestVideoURL = fmt.Sprintf("%s/watch?v=%s", youTubeBasepath,
 			playlistItem.Snippet.ResourceId.VideoId)
 		responseItem.LatestVideoTitle = playlistItem.Snippet.Title
+		responseItem.LatestVideoPublishedAt = playlistItem.Snippet.PublishedAt
 		slog.Debug(fmt.Sprintf("found latest video for channel %s", channelTitle),
 			logging.FuncNameAttr(funcName), logging.UserAttr(username))
 	}
