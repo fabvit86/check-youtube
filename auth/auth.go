@@ -4,7 +4,7 @@ import (
 	"checkYoutube/clients"
 	"checkYoutube/errors"
 	"checkYoutube/logging"
-	sessionsutils "checkYoutube/utils/sessions"
+	sessionsutils "checkYoutube/sessions"
 	"context"
 	errors2 "errors"
 	"fmt"

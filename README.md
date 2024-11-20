@@ -2,7 +2,7 @@
 
 A very simple test project written in Go that showcases the lastest video from each user's YouTube subscription that has new ("unread") content.
 
-![example](example_img.jpg)
+![example](assets/example_img.jpg)
 
 The code is not intended to be well polished or production-ready, and it's just a playground to demostrate how to:
 - implement a simple oauth2 flow for user authorization

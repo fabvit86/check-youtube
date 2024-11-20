@@ -1,7 +1,7 @@
 package sessions
 
 import (
-	"checkYoutube/testing_utils"
+	"checkYoutube/test"
 	"encoding/gob"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
@@ -77,14 +77,14 @@ func TestGetValueFromSession(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testing_utils.DeleteOauth2SessionValue(t, sessionStore, req, Oauth2SessionName, tt.args.key)
+			test.DeleteOauth2SessionValue(t, sessionStore, req, Oauth2SessionName, tt.args.key)
 			if tt.name == successCase {
 				// set a session value
-				testing_utils.SetOauth2SessionValue(t, sessionStore, req, Oauth2SessionName, tt.args.key, sessionValue)
+				test.SetOauth2SessionValue(t, sessionStore, req, Oauth2SessionName, tt.args.key, sessionValue)
 			}
 			if tt.name == invalidTypeCase {
 				// set a session value of the wrong type
-				testing_utils.SetOauth2SessionValue(t, sessionStore, req, Oauth2SessionName, tt.args.key, 0)
+				test.SetOauth2SessionValue(t, sessionStore, req, Oauth2SessionName, tt.args.key, 0)
 			}
 			got, err := GetValueFromSession[string](tt.args.sessionStore, tt.args.r, tt.args.sessionName, tt.args.key)
 			if (err != nil) != tt.wantErr {

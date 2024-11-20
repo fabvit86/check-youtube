@@ -2,8 +2,8 @@ package auth
 
 import (
 	"checkYoutube/clients"
-	"checkYoutube/testing_utils"
-	sessionsutils "checkYoutube/utils/sessions"
+	sessionsutils "checkYoutube/sessions"
+	"checkYoutube/test"
 	"context"
 	"encoding/gob"
 	"fmt"
@@ -70,7 +70,7 @@ func TestLogin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
+	oauth2C := Oauth2Config{&test.Oauth2Mock{}}
 	sessionStore := sessions.NewCookieStore([]byte(("test")))
 
 	type args struct {
@@ -109,7 +109,7 @@ func TestOauth2Redirect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
+	oauth2C := Oauth2Config{&test.Oauth2Mock{}}
 	sessionStore := sessions.NewCookieStore([]byte(("test")))
 	const errorCase = "error case - verifier not found"
 	pcf := &peopleClientFactoryMock{
@@ -187,7 +187,7 @@ func TestSwitchAccount(t *testing.T) { // mocks
 	if err != nil {
 		t.Fatal(err)
 	}
-	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
+	oauth2C := Oauth2Config{&test.Oauth2Mock{}}
 	const errorCase = "error case - verifier not found"
 
 	type args struct {
@@ -268,10 +268,10 @@ func TestCheckVerifierMiddleware(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testing_utils.DeleteOauth2SessionValue(t, tt.args.sessionStore, req,
+			test.DeleteOauth2SessionValue(t, tt.args.sessionStore, req,
 				sessionsutils.Oauth2SessionName, sessionsutils.VerifierKey)
 			if tt.name == successCase {
-				testing_utils.SetOauth2SessionValue(t, tt.args.sessionStore, req,
+				test.SetOauth2SessionValue(t, tt.args.sessionStore, req,
 					sessionsutils.Oauth2SessionName, sessionsutils.VerifierKey, "verifier")
 			}
 			handlerFunction := CheckVerifierMiddleware(tt.args.next, tt.args.sessionStore, tt.args.serverBasepath)
@@ -292,7 +292,7 @@ func TestCheckTokenMiddleware(t *testing.T) {
 	}
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	sessionStore := sessions.NewCookieStore([]byte(("test")))
-	oauth2C := Oauth2Config{&testing_utils.Oauth2Mock{}}
+	oauth2C := Oauth2Config{&test.Oauth2Mock{}}
 
 	type args struct {
 		next           http.Handler
@@ -377,10 +377,10 @@ func TestCheckTokenMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.name == wrongSessionValueCase {
-				testing_utils.SetOauth2SessionValue[int](t, sessionStore, req, tt.args.sessionName,
+				test.SetOauth2SessionValue[int](t, sessionStore, req, tt.args.sessionName,
 					sessionsutils.TokenKey, 0)
 			} else {
-				testing_utils.SetOauth2SessionValue[*TokenInfo](t, sessionStore, req, tt.args.sessionName,
+				test.SetOauth2SessionValue[*TokenInfo](t, sessionStore, req, tt.args.sessionName,
 					sessionsutils.TokenKey, tt.args.tokenInfo)
 			}
 			handlerFunction := CheckTokenMiddleware(tt.args.next, tt.args.oauth2C, tt.args.sessionStore,

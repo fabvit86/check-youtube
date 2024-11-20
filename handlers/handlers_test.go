@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"checkYoutube/auth"
 	"checkYoutube/clients"
-	"checkYoutube/testing_utils"
+	"checkYoutube/test"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -40,7 +40,7 @@ func TestGetYoutubeChannelsVideos(t *testing.T) {
 	// mocks
 	const serverBasepath = "http://localhost:8900"
 	const tokenNotFound = "redirect case - token not found in context"
-	oauth2C := auth.Oauth2Config{Oauth2ConfigProvider: &testing_utils.Oauth2Mock{}}
+	oauth2C := auth.Oauth2Config{Oauth2ConfigProvider: &test.Oauth2Mock{}}
 	recorder := httptest.NewRecorder()
 	req, err := http.NewRequest(http.MethodGet, "/check-youtube", nil)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestGetYoutubeChannelsVideos(t *testing.T) {
 
 func TestMarkAsViewed(t *testing.T) {
 	// mocks
-	oauth2C := auth.Oauth2Config{Oauth2ConfigProvider: &testing_utils.Oauth2Mock{}}
+	oauth2C := auth.Oauth2Config{Oauth2ConfigProvider: &test.Oauth2Mock{}}
 	createMockRequest := func(channelID string) *http.Request {
 		reqBody := callUrlRequest{
 			ChannelID: channelID,

@@ -1,11 +1,9 @@
-package testing_utils
+package test
 
 import (
 	"context"
-	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"net/http"
-	"testing"
 )
 
 // TokenSourceMock mocks an oauth2 token source implementation
@@ -32,22 +30,4 @@ func (o *Oauth2Mock) CreateHTTPClient(context.Context, *oauth2.Token) *http.Clie
 }
 func (o *Oauth2Mock) CreateTokenSource(context.Context, *oauth2.Token) oauth2.TokenSource {
 	return &TokenSourceMock{}
-}
-
-func SetOauth2SessionValue[T any](t *testing.T, sessionStore *sessions.CookieStore,
-	req *http.Request, sessionName, key string, value T) {
-	session, err := sessionStore.Get(req, sessionName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	session.Values[key] = value
-}
-
-func DeleteOauth2SessionValue(t *testing.T, sessionStore *sessions.CookieStore,
-	req *http.Request, sessionName, key string) {
-	session, err := sessionStore.Get(req, sessionName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delete(session.Values, key)
 }
