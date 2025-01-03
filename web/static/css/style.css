@@ -27,7 +27,7 @@ th.sortable:hover {
     cursor: pointer;
 }
 
-div#filters-div {
+div#filters-div, div#btns-div {
     padding-bottom: 10px;
 }
 

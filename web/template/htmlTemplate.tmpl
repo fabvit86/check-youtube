@@ -13,27 +13,30 @@
     <div class="btn" id="show-filtered-btn">FILTERED</div>
 </div>
 <div id="content-div">
-<table id="videos-table">
-    <thead>
-        <tr>
-            <th id="th-channel" class="sortable">Channel <span class="sort-arrow">&uarr;</span></th>
-            <th>Lastest Video</th>
-            <th id="th-ts" class="sortable">Publish date <span class="sort-arrow">&udarr;</span></th>
-            <th class="mark-as-viewed">Mark as viewed</th>
-        </tr>
-    </thead>
-    <tbody>
-        {{ range $index, $value := .YTChannels }}
-        <tr id="tr-{{ $index }}">
-            <td><a href="{{ .URL }}" target=”_blank”>{{ .Title }}</a></td>
-            <td><a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a></td>
-            <td><span class="timestamp" data-ts="{{ .LatestVideoPublishedAt }}"></span></td>
-            <td class="mark-as-viewed">
-                <button class="mark-as-viewed" data-channelid="{{ .ChannelID }}">Mark as viewed</button>
-            </td>
-        </tr>
-        {{ end }}
-    </tbody>
-</table>
+    <div id="btns-div">
+        <button id="mark-all-as-viewed">Mark all as viewed</button>
+    </div>
+    <table id="videos-table">
+        <thead>
+            <tr>
+                <th id="th-channel" class="sortable">Channel <span class="sort-arrow">&uarr;</span></th>
+                <th>Lastest Video</th>
+                <th id="th-ts" class="sortable">Publish date <span class="sort-arrow">&udarr;</span></th>
+                <th class="mark-as-viewed">Mark as viewed</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{ range $index, $value := .YTChannels }}
+            <tr id="tr-{{ $index }}" data-channelid="{{ .ChannelID }}">
+                <td><a href="{{ .URL }}" target=”_blank”>{{ .Title }}</a></td>
+                <td><a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a></td>
+                <td><span class="timestamp" data-ts="{{ .LatestVideoPublishedAt }}"></span></td>
+                <td class="mark-as-viewed">
+                    <button class="mark-as-viewed" data-channelid="{{ .ChannelID }}">Mark as viewed</button>
+                </td>
+            </tr>
+            {{ end }}
+        </tbody>
+    </table>
 </div>
 </body>

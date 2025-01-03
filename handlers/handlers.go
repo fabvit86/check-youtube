@@ -34,7 +34,7 @@ type templateResponse struct {
 }
 
 type callUrlRequest struct {
-	ChannelID string `json:"channel_id"`
+	ChannelsID []string `json:"channels_id"`
 }
 
 const youTubeBasepath = "https://www.youtube.com"
@@ -179,7 +179,7 @@ func processYouTubeChannel(svc clients.YoutubeClientInterface, item *youtube.Sub
 	return responseItem, nil
 }
 
-// MarkAsViewed visits a subscription channel in the background to clear the notification of new videos
+// MarkAsViewed visits subscription channels in the background to clear the notification of new videos
 func MarkAsViewed(oauth2C auth.Oauth2Config, serverBasepath string) http.HandlerFunc {
 	const funcName = "MarkAsViewed"
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -199,6 +199,11 @@ func MarkAsViewed(oauth2C auth.Oauth2Config, serverBasepath string) http.Handler
 			return
 		}
 
+		if len(req.ChannelsID) == 0 {
+			slog.Info("no channels ID found in request body", logging.FuncNameAttr(funcName))
+			return
+		}
+
 		// get token from context
 		tokenInfo, tokenOk := r.Context().Value(auth.TokenCtxKey{}).(*auth.TokenInfo)
 		if !tokenOk {
@@ -212,24 +217,62 @@ func MarkAsViewed(oauth2C auth.Oauth2Config, serverBasepath string) http.Handler
 		client := oauth2C.CreateHTTPClient(r.Context(), tokenInfo.Token)
 		if client == nil {
 			slog.Warn("http client not initialized, redirecting user to login page",
-				logging.FuncNameAttr(funcName))
+				logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
 			http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
 			return
 		}
 
-		// visit the channel to mark it as viewed
-		url := fmt.Sprintf("%s/channel/%s/videos", youTubeBasepath, req.ChannelID)
-		res, err := client.Get(url)
-		if err != nil {
-			slog.Error(fmt.Sprintf("markAsViewed get request failed, error: %s", err.Error()),
-				logging.FuncNameAttr(funcName))
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		// limit max concurrent goroutines that will perform the http call
+		maxConcurrentCalls := 5
+
+		// enqueue URLs to visit in a buffered channel
+		ch := make(chan string, len(req.ChannelsID))
+		errorsCh := make(chan error)
+		wg := &sync.WaitGroup{}
+		for _, channelID := range req.ChannelsID {
+			url := fmt.Sprintf("%s/channel/%s/videos", youTubeBasepath, channelID)
+			wg.Add(1)
+			ch <- url
 		}
 
-		if res.StatusCode != http.StatusOK {
-			err = fmt.Errorf("call to youtube returned status: %d", res.StatusCode)
-			slog.Error(err.Error(), logging.FuncNameAttr(funcName))
+		// visit each url of the YouTube channels to mark them as viewed
+		for i := 0; i < maxConcurrentCalls; i++ {
+			go func() {
+				for url := range ch {
+					func() {
+						defer wg.Done()
+						res, err := client.Get(url)
+						if err != nil {
+							slog.Error(fmt.Sprintf("markAsViewed get request failed, error: %s", err.Error()),
+								logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+							errorsCh <- err
+							return
+						}
+
+						if res.StatusCode != http.StatusOK {
+							err = fmt.Errorf("call to youtube returned status: %d", res.StatusCode)
+							slog.Error(err.Error(), logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+							errorsCh <- err
+							return
+						}
+
+						slog.Debug(fmt.Sprintf("visited url: %s", url),
+							logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+					}()
+				}
+			}()
+		}
+
+		close(ch)
+
+		// close errors channel when all goroutines are done
+		go func() {
+			wg.Wait()
+			close(errorsCh)
+		}()
+
+		// check for errors in the error channel, return the first error encountered
+		for err := range errorsCh {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

@@ -10,6 +10,7 @@ function jsScript() {
 
     // hadle mark as viewed buttons event
     markAsViewed(serverBasepath)
+    markAllAsViewed(serverBasepath)
 
     // sort table by column on click
     sortByColumn(serverBasepath)
@@ -26,7 +27,7 @@ function markAsViewed(serverBasepath) {
                 let totVids = Number(document.getElementById("tot-channels").textContent);
                 await fetch(serverBasepath + "/mark-as-viewed", {
                     method: 'POST',
-                    body: JSON.stringify({channel_id: channelID})
+                    body: JSON.stringify({channels_id: [channelID]})
                 });
                 document.getElementById(trID).remove();
                 document.getElementById("tot-channels").textContent = totVids - 1;
@@ -35,6 +36,35 @@ function markAsViewed(serverBasepath) {
                 return e;
             }
         });
+    });
+}
+function markAllAsViewed(serverBasepath) {
+    // collect all channels IDs
+    const tableContentRows = document.querySelectorAll('table#videos-table tbody tr')
+    let channelsID = [];
+    tableContentRows.forEach((tr) => {
+        channelsID.push(tr.dataset.channelid);
+    });
+
+    if (channelsID.length === 0) {
+        return;
+    }
+
+    const markAllAsViewedButton = document.querySelector('button#mark-all-as-viewed')
+    markAllAsViewedButton.addEventListener('click', async function() {
+        try {
+            await fetch(serverBasepath + "/mark-as-viewed", {
+                method: 'POST',
+                body: JSON.stringify({channels_id: channelsID})
+            });
+
+            // clear table body
+            document.querySelector('table#videos-table tbody').innerHTML = "";
+            document.getElementById("tot-channels").textContent = "0";
+        } catch (e) {
+            console.log(e);
+            return e;
+        }
     });
 }
 
@@ -61,6 +91,7 @@ function handleFilters() {
         document.getElementById("show-filtered-btn").classList.remove("active");
         document.getElementById("channels-info-span").textContent="# of channels:";
         document.querySelectorAll(".mark-as-viewed").forEach(el => el.remove());
+        document.getElementById("mark-all-as-viewed").remove();
     }
 }
 
