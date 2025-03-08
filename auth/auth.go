@@ -2,6 +2,7 @@ package auth
 
 import (
 	"checkYoutube/clients"
+	"checkYoutube/database"
 	"checkYoutube/errors"
 	"checkYoutube/logging"
 	sessionsutils "checkYoutube/sessions"
@@ -26,6 +27,7 @@ type Oauth2Config struct {
 type TokenInfo struct {
 	Token    *oauth2.Token
 	Username string
+	UserId   string
 }
 
 type verifierCtxKey struct{}
@@ -85,7 +87,7 @@ func Login(oauth2C Oauth2Config, sessionStore *sessions.CookieStore) http.Handle
 }
 
 // Oauth2Redirect oauth2 redirect landing endpoint
-func Oauth2Redirect(oauth2C Oauth2Config, sessionStore *sessions.CookieStore,
+func Oauth2Redirect(oauth2C Oauth2Config, sessionStore *sessions.CookieStore, storage database.StorageInterface,
 	pcf clients.PeopleClientFactoryInterface, serverBasepath string) http.HandlerFunc {
 	const funcName = "Oauth2Redirect"
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -126,12 +128,26 @@ func Oauth2Redirect(oauth2C Oauth2Config, sessionStore *sessions.CookieStore,
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		username := peopleSvc.GetLoggedUserinfo()
+		userinfo := peopleSvc.GetLoggedUserinfo()
+		userId := userinfo.Id
+		username := userinfo.DisplayName
+
+		// store refresh token into the database
+		if token.RefreshToken != "" {
+			err = storage.UpsertRefreshToken(userId, token.RefreshToken)
+			if err != nil {
+				slog.Error(fmt.Sprintf("failed to store refresh token into db: %s", err.Error()),
+					logging.FuncNameAttr(funcName), logging.UserAttr(username))
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
 
 		// store token and user info in session
 		session.Values[sessionsutils.TokenKey] = &TokenInfo{
 			Token:    token,
 			Username: username,
+			UserId:   userId,
 		}
 
 		// save session
@@ -198,7 +214,7 @@ func CheckVerifierMiddleware(next http.Handler, sessionStore *sessions.CookieSto
 }
 
 // CheckTokenMiddleware retrieves the token from the session, validates it, refreshes it and stores it in the context
-func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
+func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config, storage database.StorageInterface,
 	sessionStore *sessions.CookieStore, serverBasepath string) http.HandlerFunc {
 	const funcName = "CheckTokenMiddleware"
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -219,12 +235,35 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
 
 		// check if token is valid, if not try to refresh it
 		if !tokenInfo.Token.Valid() {
-			if tokenInfo.Token != nil && tokenInfo.Token.RefreshToken != "" {
+			var err error
+			var refreshToken string
+			if tokenInfo.Token != nil {
 				slog.Warn("token is nil or expired, trying to refresh it",
 					logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
-				tokenInfo.Token, err = oauth2C.CreateTokenSource(r.Context(), tokenInfo.Token).Token()
+
+				// retrieve refresh token from db for session user
+				slog.Info("trying to retrieve refresh token from db",
+					logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+				refreshToken, err = storage.GetRefreshTokenByUserId(tokenInfo.UserId)
+				if err != nil {
+					slog.Error(err.Error(), logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+
+				// refresh the token
+				if refreshToken != "" {
+					slog.Warn("token is nil or expired, trying to refresh it",
+						logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+					tokenInfo.Token.RefreshToken = refreshToken
+					tokenInfo.Token, err = oauth2C.CreateTokenSource(r.Context(), tokenInfo.Token).Token()
+				} else {
+					slog.Warn("refresh token not found in db",
+						logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+					err = fmt.Errorf("refresh token not found in db")
+				}
 			} else {
-				err = fmt.Errorf("refresh token not available")
+				err = fmt.Errorf("token not found in session")
 			}
 			if err != nil {
 				slog.Error(fmt.Sprintf("unable to refresh token, redirect to login: %s", err.Error()),
@@ -234,6 +273,14 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config,
 			}
 			slog.Info("token has been refreshed", logging.FuncNameAttr(funcName),
 				logging.UserAttr(tokenInfo.Username))
+
+			// update refresh token into db
+			err = storage.UpsertRefreshToken(tokenInfo.UserId, tokenInfo.Token.RefreshToken)
+			if err != nil {
+				slog.Error(err.Error(), logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 
 			// update tokenInfo in session with refreshed token
 			session, err := sessionStore.Get(r, sessionsutils.Oauth2SessionName)

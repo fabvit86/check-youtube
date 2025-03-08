@@ -11,7 +11,7 @@ import (
 )
 
 type PeopleClientInterface interface {
-	GetLoggedUserinfo() string
+	GetLoggedUserinfo() Userinfo
 }
 
 type PeopleClientFactoryInterface interface {
@@ -23,6 +23,11 @@ type peopleClient struct {
 }
 
 type PeopleClientFactory struct{}
+
+type Userinfo struct {
+	Id          string
+	DisplayName string
+}
 
 // NewClient creates a new people service client using the given token source
 func (p *PeopleClientFactory) NewClient(ts oauth2.TokenSource) (PeopleClientInterface, error) {
@@ -41,22 +46,26 @@ func (p *PeopleClientFactory) NewClient(ts oauth2.TokenSource) (PeopleClientInte
 	}, nil
 }
 
-func (p *peopleClient) GetLoggedUserinfo() string {
+func (p *peopleClient) GetLoggedUserinfo() Userinfo {
 	const funcName = "GetLoggedUserinfo"
+	user := Userinfo{}
 
 	userinfo, err := p.svc.People.
 		Get("people/me").
-		PersonFields("names").
+		PersonFields("names,metadata").
 		Do()
 	if err != nil {
 		slog.Error(fmt.Sprintf("error retrieving logged user info: %s", err.Error()),
 			logging.FuncNameAttr(funcName))
-		return ""
+		return user
 	}
 
 	if len(userinfo.Names) > 0 {
-		return userinfo.Names[0].DisplayName
+		user.DisplayName = userinfo.Names[0].DisplayName
+	}
+	if len(userinfo.Metadata.Sources) > 0 && userinfo.Metadata.Sources[0].Id != "" {
+		user.Id = userinfo.Metadata.Sources[0].Id
 	}
 
-	return ""
+	return user
 }

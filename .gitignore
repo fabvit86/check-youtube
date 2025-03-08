@@ -23,3 +23,6 @@ go.work
 # .env file
 .env
 creds.json
+
+# sqlite database
+*.db

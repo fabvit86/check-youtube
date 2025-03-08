@@ -4,6 +4,7 @@ import (
 	"checkYoutube/auth"
 	"checkYoutube/clients"
 	"checkYoutube/configs"
+	"checkYoutube/database"
 	"checkYoutube/handlers"
 	"checkYoutube/logging"
 	"checkYoutube/web"
@@ -11,6 +12,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"github.com/gorilla/sessions"
+	_ "github.com/mattn/go-sqlite3"
 	"log/slog"
 	"net/http"
 	"os"
@@ -41,6 +43,20 @@ func main() {
 		os.Exit(-1)
 	}
 
+	// connect to database, used to store users' refresh token
+	storage := new(database.Storage)
+	if err := storage.Init(); err != nil {
+		slog.Error("failed to connect to database", "error", err)
+		os.Exit(-1)
+	}
+
+	// run database migrations
+	err = storage.RunMigrations()
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(-1)
+	}
+
 	// session storage, used to store the data needed for the oauth2 login flow
 	sessionStore := sessions.NewCookieStore([]byte((os.Getenv("SESSION_KEY"))))
 	gob.Register(&auth.TokenInfo{})
@@ -55,14 +71,14 @@ func main() {
 	// register handlers
 	http.HandleFunc("/login", auth.Login(oauth2C, sessionStore))
 	http.HandleFunc("/landing", auth.CheckVerifierMiddleware(
-		auth.Oauth2Redirect(oauth2C, sessionStore, pcf, serverBasepath), sessionStore, serverBasepath))
+		auth.Oauth2Redirect(oauth2C, sessionStore, storage, pcf, serverBasepath), sessionStore, serverBasepath))
 	http.HandleFunc("/check-youtube", auth.CheckTokenMiddleware(
 		handlers.GetYoutubeChannelsVideos(oauth2C, ytcf, serverBasepath, string(web.HtmlTemplate)),
-		oauth2C, sessionStore, serverBasepath))
+		oauth2C, storage, sessionStore, serverBasepath))
 	http.HandleFunc("/switch-account", auth.CheckVerifierMiddleware(
 		auth.SwitchAccount(oauth2C), sessionStore, serverBasepath))
 	http.HandleFunc("/mark-as-viewed", auth.CheckTokenMiddleware(
-		handlers.MarkAsViewed(oauth2C, serverBasepath), oauth2C, sessionStore, serverBasepath))
+		handlers.MarkAsViewed(oauth2C, serverBasepath), oauth2C, storage, sessionStore, serverBasepath))
 	http.Handle("/static/", http.FileServer(http.FS(web.StaticContent)))
 
 	// start the server

@@ -17,17 +17,37 @@ import (
 )
 
 type peopleClientMock struct {
-	getLoggedUserinfoStub func() string
+	getLoggedUserinfoStub func() clients.Userinfo
 }
 type peopleClientFactoryMock struct {
 	newClientStub func(oauth2.TokenSource) (clients.PeopleClientInterface, error)
 }
 
-func (p peopleClientMock) GetLoggedUserinfo() string {
+func (p peopleClientMock) GetLoggedUserinfo() clients.Userinfo {
 	return p.getLoggedUserinfoStub()
 }
 func (pf *peopleClientFactoryMock) NewClient(ts oauth2.TokenSource) (clients.PeopleClientInterface, error) {
 	return pf.newClientStub(ts)
+}
+
+type storageMock struct {
+	initStub                    func() error
+	runMigrationsStub           func() error
+	getRefreshTokenByUserIdStub func(userId string) (string, error)
+	upsertRefreshTokenStub      func(userId, refreshToken string) error
+}
+
+func (s *storageMock) Init() error {
+	return s.initStub()
+}
+func (s *storageMock) RunMigrations() error {
+	return s.runMigrationsStub()
+}
+func (s *storageMock) GetRefreshTokenByUserId(userId string) (string, error) {
+	return s.getRefreshTokenByUserIdStub(userId)
+}
+func (s *storageMock) UpsertRefreshToken(userId, refreshToken string) error {
+	return s.upsertRefreshTokenStub(userId, refreshToken)
 }
 
 func TestMain(m *testing.M) {
@@ -114,7 +134,12 @@ func TestOauth2Redirect(t *testing.T) {
 	const errorCase = "error case - verifier not found"
 	pcf := &peopleClientFactoryMock{
 		newClientStub: func(ts oauth2.TokenSource) (clients.PeopleClientInterface, error) {
-			return &peopleClientMock{getLoggedUserinfoStub: func() string { return "usertest" }}, nil
+			return &peopleClientMock{getLoggedUserinfoStub: func() clients.Userinfo {
+				return clients.Userinfo{
+					Id:          "1",
+					DisplayName: "usertest",
+				}
+			}}, nil
 		},
 	}
 
@@ -172,7 +197,12 @@ func TestOauth2Redirect(t *testing.T) {
 				req = req.WithContext(addVerifierToContext(req.Context(), "verifier"))
 			}
 			recorder := httptest.NewRecorder()
-			handlerFunction := Oauth2Redirect(oauth2C, tt.args.sessionStore, tt.args.pcf, tt.args.serverBasepath)
+			storage := &storageMock{
+				upsertRefreshTokenStub: func(userId, refreshToken string) error {
+					return nil
+				},
+			}
+			handlerFunction := Oauth2Redirect(oauth2C, tt.args.sessionStore, storage, tt.args.pcf, tt.args.serverBasepath)
 			handlerFunction(recorder, req)
 			if recorder.Code != tt.want {
 				t.Errorf("Oauth2Redirect() = %v, want %v", recorder.Code, tt.want)
@@ -293,6 +323,14 @@ func TestCheckTokenMiddleware(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	sessionStore := sessions.NewCookieStore([]byte(("test")))
 	oauth2C := Oauth2Config{&test.Oauth2Mock{}}
+	storage := &storageMock{
+		getRefreshTokenByUserIdStub: func(userId string) (string, error) {
+			return "refreshToken", nil
+		},
+		upsertRefreshTokenStub: func(userId, refreshToken string) error {
+			return nil
+		},
+	}
 
 	type args struct {
 		next           http.Handler
@@ -383,7 +421,7 @@ func TestCheckTokenMiddleware(t *testing.T) {
 				test.SetOauth2SessionValue[*TokenInfo](t, sessionStore, req, tt.args.sessionName,
 					sessionsutils.TokenKey, tt.args.tokenInfo)
 			}
-			handlerFunction := CheckTokenMiddleware(tt.args.next, tt.args.oauth2C, tt.args.sessionStore,
+			handlerFunction := CheckTokenMiddleware(tt.args.next, tt.args.oauth2C, storage, tt.args.sessionStore,
 				tt.args.serverBasepath)
 			handlerFunction(tt.args.recorder, req)
 			if tt.args.recorder.Code != tt.want {

@@ -7,6 +7,7 @@ toolchain go1.23.1
 require (
 	github.com/google/go-cmp v0.7.0
 	github.com/gorilla/sessions v1.4.0
+	github.com/mattn/go-sqlite3 v1.14.24
 	golang.org/x/oauth2 v0.28.0
 	google.golang.org/api v0.224.0
 )
