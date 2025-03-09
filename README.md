@@ -5,7 +5,7 @@ A very simple test project written in Go that showcases the lastest video from e
 ![example](assets/example_img.jpg)
 
 The code is not intended to be well polished or production-ready, and it's just a playground to demostrate how to:
-- implement a simple oauth2 flow for user authorization
+- implement a simple oauth2 flow for user authorization, including token storage using sessions and SQLite
 - interact with Google People and YouTube service APIs
 - run a simple web server
 - use Go HTML templates and pure Javascript to render the results
@@ -17,12 +17,13 @@ The code is not intended to be well polished or production-ready, and it's just 
 
 ### Usage
 Set the following env variables:
-- CLIENT_ID: The oauth2 client_id of the application
-- CLIENT_SECRET: The oauth2 client_secret of the application
-- SERVER_PORT: The server port, default to 8900
-- OAUTH_LANDING_PAGE: The oauth2 landing page, e.g.: http://localhost:8900/landing
-- SESSION_KEY: A random string used to init the session cookie store
-- LOG_LEVEL: The log level, default to "INFO". Accepted values are case-insensitive: "DEBUG", "INFO", "WARN"/"WARNING", "ERROR" 
+- CLIENT_ID: The oauth2 client_id of the application.
+- CLIENT_SECRET: The oauth2 client_secret of the application.
+- SERVER_PORT: The server port, default to 8900.
+- OAUTH_LANDING_PAGE: The oauth2 landing page, e.g.: http://localhost:8900/landing.
+- SESSION_KEY: A random string used to init the session cookie store.
+- LOG_LEVEL: The log level, default to "INFO". Accepted values are case-insensitive: "DEBUG", "INFO", "WARN"/"WARNING", "ERROR".
+- SQLITE_DB_PATH: The path to the sqlite database where oauth2 refresh tokens will be stored.
 
 Running the code will start the web server. User should go to http://localhost:<SERVER_PORT>/login to login using Google, the server will then redirect the user to the main application page.
 
@@ -30,5 +31,5 @@ The repo contains a Dockerfile, so it's also possible to build a container and r
 For example, supposing to use a .env file to pass environmental variables and use 8900 as SERVER_PORT:
 ```
 docker build -t check-youtube:0.0.1 .
-docker run -p 8900:8900 --env-file .env --name=check-youtube -d check-youtube:0.0.1
+docker run -p 8900:8900 --env-file .env --name=check-youtube -v check-youtube-storage:/app/data -d check-youtube:0.0.1
 ```
