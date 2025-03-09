@@ -45,15 +45,15 @@ func main() {
 
 	// connect to database, used to store users' refresh token
 	storage := new(database.Storage)
-	if err := storage.Init(); err != nil {
-		slog.Error("failed to connect to database", "error", err)
+	if err = storage.Init(); err != nil {
+		slog.Error(fmt.Sprintf("failed to connect to database: %s", err.Error()), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
 
 	// run database migrations
 	err = storage.RunMigrations()
 	if err != nil {
-		slog.Error(err.Error())
+		slog.Error(err.Error(), logging.FuncNameAttr(funcName))
 		os.Exit(-1)
 	}
 
