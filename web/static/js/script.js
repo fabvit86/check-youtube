@@ -25,10 +25,15 @@ function markAsViewed(serverBasepath) {
             const trID = event.target.closest("tr").id;
             try {
                 let totVids = Number(document.getElementById("tot-channels").textContent);
-                await fetch(serverBasepath + "/mark-as-viewed", {
-                    method: 'POST',
-                    body: JSON.stringify({channels_id: [channelID]})
-                });
+
+                // Frontend-based workaround
+                await visitChannel(channelID);
+
+                // await fetch(serverBasepath + "/mark-as-viewed", {
+                //     method: 'POST',
+                //     body: JSON.stringify({channels_id: [channelID]})
+                // });
+
                 document.getElementById(trID).remove();
                 document.getElementById("tot-channels").textContent = totVids - 1;
             } catch (e) {
@@ -53,10 +58,15 @@ function markAllAsViewed(serverBasepath) {
     const markAllAsViewedButton = document.querySelector('button#mark-all-as-viewed')
     markAllAsViewedButton.addEventListener('click', async function() {
         try {
-            await fetch(serverBasepath + "/mark-as-viewed", {
-                method: 'POST',
-                body: JSON.stringify({channels_id: channelsID})
-            });
+            // Frontend-based workaround
+            for (const channelID of channelsID) {
+                await visitChannel(channelID);
+            }
+
+            // await fetch(serverBasepath + "/mark-as-viewed", {
+            //     method: 'POST',
+            //     body: JSON.stringify({channels_id: channelsID})
+            // });
 
             // clear table body
             document.querySelector('table#videos-table tbody').innerHTML = "";
@@ -66,6 +76,13 @@ function markAllAsViewed(serverBasepath) {
             return e;
         }
     });
+}
+
+// open the link in a new tab and immediately close the tab (works only for the YT account logged-in on the browser)
+function visitChannel(channelID) {
+    const url = "https://www.youtube.com/channel/" + channelID;
+    window.open(url, "_blank").close();
+    return new Promise(resolve => setTimeout(resolve, 1));
 }
 
 // handle results filters
