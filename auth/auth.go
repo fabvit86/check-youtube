@@ -16,6 +16,7 @@ import (
 	"google.golang.org/api/youtube/v3"
 	"log/slog"
 	"net/http"
+	"net/url"
 )
 
 // Oauth2Config embeds the interface that wraps an oauth2.Config
@@ -38,6 +39,13 @@ type TokenCtxKey struct{}
 
 func (TokenCtxKey) String() string { return "tokenInfo" }
 
+const (
+	selectAccountPrompt = "select_account"
+	consentPrompt       = "consent"
+	trueStr             = "true"
+	falseStr            = "false"
+)
+
 // CreateOauth2Config creates a new Oauth2Config instance
 func CreateOauth2Config(clientID, clientSecret, redirectURL string) Oauth2Config {
 	return Oauth2Config{
@@ -57,6 +65,10 @@ func CreateOauth2Config(clientID, clientSecret, redirectURL string) Oauth2Config
 func Login(oauth2C Oauth2Config, sessionStore *sessions.CookieStore) http.HandlerFunc {
 	const funcName = "Login"
 	return func(w http.ResponseWriter, r *http.Request) {
+		selectAccountParam := r.URL.Query().Get(selectAccountPrompt)
+		promptAccountSelect := selectAccountParam == trueStr || selectAccountParam == ""
+		promptConsent := r.URL.Query().Get(consentPrompt) == trueStr
+
 		// add and retrieve session
 		session, err := sessionStore.Get(r, sessionsutils.Oauth2SessionName)
 		if err != nil {
@@ -81,8 +93,8 @@ func Login(oauth2C Oauth2Config, sessionStore *sessions.CookieStore) http.Handle
 		}
 
 		// redirect to the Google's auth url
-		url := oauth2C.GenerateAuthURL("state", verifier, true)
-		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		authUrl := oauth2C.GenerateAuthURL("state", verifier, promptAccountSelect, promptConsent)
+		http.Redirect(w, r, authUrl, http.StatusTemporaryRedirect)
 	}
 }
 
@@ -141,6 +153,7 @@ func Oauth2Redirect(oauth2C Oauth2Config, sessionStore *sessions.CookieStore, st
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
+			slog.Info("user's refresh token updated", logging.FuncNameAttr(funcName), logging.UserAttr(username))
 		}
 
 		// store token and user info in session
@@ -179,8 +192,8 @@ func SwitchAccount(oauth2C Oauth2Config) http.HandlerFunc {
 		}
 
 		// redirect to the Google's auth url
-		url := oauth2C.GenerateAuthURL("state", verifier, true)
-		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+		authUrl := oauth2C.GenerateAuthURL("state", verifier, true, false)
+		http.Redirect(w, r, authUrl, http.StatusTemporaryRedirect)
 	}
 }
 
@@ -238,7 +251,7 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config, storage datab
 			var err error
 			var refreshToken string
 			if tokenInfo.Token != nil {
-				slog.Warn("token is nil or expired, trying to refresh it",
+				slog.Warn("token is expired, trying to refresh it",
 					logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
 
 				// retrieve refresh token from db for session user
@@ -268,7 +281,20 @@ func CheckTokenMiddleware(next http.Handler, oauth2C Oauth2Config, storage datab
 			if err != nil {
 				slog.Error(fmt.Sprintf("unable to refresh token, redirect to login: %s", err.Error()),
 					logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
-				http.Redirect(w, r, fmt.Sprintf("%s/login", serverBasepath), http.StatusTemporaryRedirect)
+
+				// redirect to login, prompting the user for consent in order to get back a refresh token
+				loginUrl, parseErr := url.Parse(fmt.Sprintf("%s/login", serverBasepath))
+				if parseErr != nil {
+					slog.Error(fmt.Sprintf("failed to parse login url: %s", parseErr.Error()),
+						logging.FuncNameAttr(funcName), logging.UserAttr(tokenInfo.Username))
+					http.Error(w, parseErr.Error(), http.StatusInternalServerError)
+					return
+				}
+				queryParams := url.Values{}
+				queryParams.Add(selectAccountPrompt, falseStr)
+				queryParams.Add(consentPrompt, trueStr)
+				loginUrl.RawQuery = queryParams.Encode()
+				http.Redirect(w, r, loginUrl.String(), http.StatusTemporaryRedirect)
 				return
 			}
 			slog.Info("token has been refreshed", logging.FuncNameAttr(funcName),

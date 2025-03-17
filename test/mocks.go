@@ -19,7 +19,7 @@ type Oauth2Mock struct{}
 func (o *Oauth2Mock) GenerateVerifier() string {
 	return "mockVerifier"
 }
-func (o *Oauth2Mock) GenerateAuthURL(string, string, bool) string {
+func (o *Oauth2Mock) GenerateAuthURL(string, string, bool, bool) string {
 	return "mockURL"
 }
 func (o *Oauth2Mock) ExchangeCodeWithToken(context.Context, string, ...oauth2.AuthCodeOption) (*oauth2.Token, error) {
