@@ -14,6 +14,8 @@ type YoutubeClientInterface interface {
 	GetAndProcessSubscriptions(ctx context.Context,
 		processFunction func(*youtube.SubscriptionListResponse) error) error
 	GetLatestVideoFromPlaylist(playlistID string) (*youtube.PlaylistItem, error)
+	GetVideos(ctx context.Context, videoIDs []string,
+		processFunction func(*youtube.VideoListResponse) error) error
 }
 
 type YoutubeClientFactoryInterface interface {
@@ -82,4 +84,22 @@ func (y *youtubeClient) GetLatestVideoFromPlaylist(playlistID string) (*youtube.
 
 	slog.Debug(fmt.Sprintf("no video found in playlist %s", playlistID), logging.FuncNameAttr(funcName))
 	return nil, nil
+}
+
+func (y *youtubeClient) GetVideos(ctx context.Context, videoIDs []string,
+	processFunction func(*youtube.VideoListResponse) error) error {
+	const funcName = "GetVideos"
+
+	err := y.svc.Videos.
+		List([]string{"contentDetails"}).
+		Id(videoIDs...).
+		MaxResults(50).
+		Pages(ctx, processFunction)
+	if err != nil {
+		slog.Error(fmt.Sprintf("error retrieving YouTube videos with IDs %s: %s",
+			videoIDs, err.Error()), logging.FuncNameAttr(funcName))
+		return err
+	}
+
+	return nil
 }

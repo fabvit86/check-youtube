@@ -54,3 +54,7 @@ div .btn:hover {
 div .active {
     background-color: darkgreen;
 }
+
+span.duration {
+    font-size: smaller;
+}

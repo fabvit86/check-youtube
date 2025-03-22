@@ -3,6 +3,7 @@ package handlers
 import (
 	"checkYoutube/auth"
 	"checkYoutube/clients"
+	"checkYoutube/duration"
 	"checkYoutube/logging"
 	"cmp"
 	"context"
@@ -22,9 +23,11 @@ type YTChannel struct {
 	Title                  string
 	ChannelID              string
 	URL                    string
+	LatestVideoID          string
 	LatestVideoURL         string
 	LatestVideoTitle       string
 	LatestVideoPublishedAt string
+	LatestVideoDuration    string
 }
 
 type templateResponse struct {
@@ -89,6 +92,7 @@ func GetYoutubeChannelsVideos(oauth2C auth.Oauth2Config, ytcf clients.YoutubeCli
 func checkYoutube(svc clients.YoutubeClientInterface, filtered bool, username string) []YTChannel {
 	const funcName = "checkYoutube"
 	response := make([]YTChannel, 0)
+	videoIDs := make([]string, 0)
 	ctx := context.Background()
 
 	if svc == nil {
@@ -115,6 +119,7 @@ func checkYoutube(svc clients.YoutubeClientInterface, filtered bool, username st
 					}
 					mutex.Lock()
 					response = append(response, responseItem)
+					videoIDs = append(videoIDs, responseItem.LatestVideoID)
 					mutex.Unlock()
 				}(item)
 			} else {
@@ -133,6 +138,35 @@ func checkYoutube(svc clients.YoutubeClientInterface, filtered bool, username st
 	if len(response) == 0 {
 		slog.Info("no new video published by user's YouTube channels",
 			logging.FuncNameAttr(funcName), logging.UserAttr(username))
+		return response
+	}
+
+	// retrieve additional videos info from videos API
+	err = svc.GetVideos(ctx, videoIDs, func(videos *youtube.VideoListResponse) error {
+		// add video duration to each response item
+		for _, item := range videos.Items {
+			dur := item.ContentDetails.Duration
+			if dur != "" {
+				for i, ytChannel := range response {
+					if ytChannel.LatestVideoID == item.Id {
+						formattedDur, err := duration.FormatISO8601Duration(dur, username)
+						if err != nil {
+							slog.Warn(fmt.Sprintf("error formatting video duration: %s", err.Error()),
+								logging.FuncNameAttr(funcName), logging.UserAttr(username))
+							continue
+						}
+						response[i].LatestVideoDuration = formattedDur
+						break
+					}
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Error(fmt.Sprintf("error retrieving videos: %s",
+			err.Error()), logging.FuncNameAttr(funcName), logging.UserAttr(username))
+		return response
 	}
 
 	// sort results by title
@@ -172,6 +206,7 @@ func processYouTubeChannel(svc clients.YoutubeClientInterface, item *youtube.Sub
 			playlistItem.Snippet.ResourceId.VideoId)
 		responseItem.LatestVideoTitle = playlistItem.Snippet.Title
 		responseItem.LatestVideoPublishedAt = playlistItem.Snippet.PublishedAt
+		responseItem.LatestVideoID = playlistItem.Snippet.ResourceId.VideoId
 		slog.Debug(fmt.Sprintf("found latest video for channel %s", channelTitle),
 			logging.FuncNameAttr(funcName), logging.UserAttr(username))
 	}

@@ -20,6 +20,7 @@ import (
 type youtubeClientMock struct {
 	getAndProcessSubscriptionsStub func(context.Context, func(*youtube.SubscriptionListResponse) error) error
 	getLatestVideoFromPlaylistStub func(string) (*youtube.PlaylistItem, error)
+	getVideosStub                  func(context.Context, []string, func(*youtube.VideoListResponse) error) error
 }
 type youtubeClientFactoryMock struct {
 	newClientStub func(oauth2.TokenSource) (clients.YoutubeClientInterface, error)
@@ -31,6 +32,10 @@ func (y youtubeClientMock) GetAndProcessSubscriptions(ctx context.Context,
 }
 func (y youtubeClientMock) GetLatestVideoFromPlaylist(playlistID string) (*youtube.PlaylistItem, error) {
 	return y.getLatestVideoFromPlaylistStub(playlistID)
+}
+func (y youtubeClientMock) GetVideos(ctx context.Context, videoIDs []string,
+	processFunction func(*youtube.VideoListResponse) error) error {
+	return y.getVideosStub(ctx, videoIDs, processFunction)
 }
 func (yf *youtubeClientFactoryMock) NewClient(ts oauth2.TokenSource) (clients.YoutubeClientInterface, error) {
 	return yf.newClientStub(ts)
@@ -327,6 +332,11 @@ func Test_checkYoutube(t *testing.T) {
 					getLatestVideoFromPlaylistStub: func(string) (*youtube.PlaylistItem, error) {
 						return playlistItemOuput, nil
 					},
+					getVideosStub: func(ctx context.Context, videoIDs []string,
+						processFunction func(*youtube.VideoListResponse) error) error {
+						_ = processFunction(&youtube.VideoListResponse{})
+						return nil
+					},
 				},
 				filtered: true,
 			},
@@ -335,6 +345,7 @@ func Test_checkYoutube(t *testing.T) {
 					Title:            subsInput[0].Snippet.Title,
 					ChannelID:        subsInput[0].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[0].Snippet.ResourceId.ChannelId),
+					LatestVideoID:    playlistItemOuput.Snippet.ResourceId.VideoId,
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
 				},
@@ -342,6 +353,7 @@ func Test_checkYoutube(t *testing.T) {
 					Title:            subsInput[1].Snippet.Title,
 					ChannelID:        subsInput[1].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[1].Snippet.ResourceId.ChannelId),
+					LatestVideoID:    playlistItemOuput.Snippet.ResourceId.VideoId,
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
 				},
@@ -361,6 +373,11 @@ func Test_checkYoutube(t *testing.T) {
 					getLatestVideoFromPlaylistStub: func(string) (*youtube.PlaylistItem, error) {
 						return playlistItemOuput, nil
 					},
+					getVideosStub: func(ctx context.Context, videoIDs []string,
+						processFunction func(*youtube.VideoListResponse) error) error {
+						_ = processFunction(&youtube.VideoListResponse{})
+						return nil
+					},
 				},
 				filtered: false,
 			},
@@ -369,6 +386,7 @@ func Test_checkYoutube(t *testing.T) {
 					Title:            subsInput[0].Snippet.Title,
 					ChannelID:        subsInput[0].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[0].Snippet.ResourceId.ChannelId),
+					LatestVideoID:    playlistItemOuput.Snippet.ResourceId.VideoId,
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
 				},
@@ -376,6 +394,7 @@ func Test_checkYoutube(t *testing.T) {
 					Title:            subsInput[1].Snippet.Title,
 					ChannelID:        subsInput[1].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[1].Snippet.ResourceId.ChannelId),
+					LatestVideoID:    playlistItemOuput.Snippet.ResourceId.VideoId,
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
 				},
@@ -383,6 +402,7 @@ func Test_checkYoutube(t *testing.T) {
 					Title:            subsInput[2].Snippet.Title,
 					ChannelID:        subsInput[2].Snippet.ResourceId.ChannelId,
 					URL:              fmt.Sprintf(channelUrl, subsInput[2].Snippet.ResourceId.ChannelId),
+					LatestVideoID:    playlistItemOuput.Snippet.ResourceId.VideoId,
 					LatestVideoURL:   fmt.Sprintf(videoUrl, playlistItemOuput.Snippet.ResourceId.VideoId),
 					LatestVideoTitle: playlistItemOuput.Snippet.Title,
 				},
@@ -435,6 +455,11 @@ func Test_checkYoutube(t *testing.T) {
 					},
 					getLatestVideoFromPlaylistStub: func(string) (*youtube.PlaylistItem, error) {
 						return nil, fmt.Errorf("test error")
+					},
+					getVideosStub: func(ctx context.Context, videoIDs []string,
+						processFunction func(*youtube.VideoListResponse) error) error {
+						_ = processFunction(&youtube.VideoListResponse{})
+						return nil
 					},
 				},
 				filtered: true,
@@ -506,6 +531,7 @@ func Test_processYouTubeChannel(t *testing.T) {
 				Title:            item.Snippet.Title,
 				ChannelID:        item.Snippet.ResourceId.ChannelId,
 				URL:              fmt.Sprintf("https://www.youtube.com/channel/%s/videos", item.Snippet.ResourceId.ChannelId),
+				LatestVideoID:    videoID,
 				LatestVideoURL:   fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID),
 				LatestVideoTitle: "titletest",
 			},

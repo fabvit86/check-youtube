@@ -29,7 +29,10 @@
             {{ range $index, $value := .YTChannels }}
             <tr id="tr-{{ $index }}" data-channelid="{{ .ChannelID }}">
                 <td><a href="{{ .URL }}" target=”_blank”>{{ .Title }}</a></td>
-                <td><a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a></td>
+                <td>
+                    <a href="{{ .LatestVideoURL }}" target=”_blank”>{{ .LatestVideoTitle }}</a>
+                    <br><span class="duration">{{ .LatestVideoDuration }}</span>
+                </td>
                 <td><span class="timestamp" data-ts="{{ .LatestVideoPublishedAt }}"></span></td>
                 <td class="mark-as-viewed">
                     <button class="mark-as-viewed" data-channelid="{{ .ChannelID }}">Mark as viewed</button>
