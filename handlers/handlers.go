@@ -3,7 +3,7 @@ package handlers
 import (
 	"checkYoutube/auth"
 	"checkYoutube/clients"
-	"checkYoutube/duration"
+	"checkYoutube/datetime"
 	"checkYoutube/logging"
 	"cmp"
 	"context"
@@ -141,32 +141,40 @@ func checkYoutube(svc clients.YoutubeClientInterface, filtered bool, username st
 		return response
 	}
 
-	// retrieve additional videos info from videos API
-	err = svc.GetVideos(ctx, videoIDs, func(videos *youtube.VideoListResponse) error {
-		// add video duration to each response item
-		for _, item := range videos.Items {
-			dur := item.ContentDetails.Duration
-			if dur != "" {
-				for i, ytChannel := range response {
-					if ytChannel.LatestVideoID == item.Id {
-						formattedDur, err := duration.FormatISO8601Duration(dur, username)
-						if err != nil {
-							slog.Warn(fmt.Sprintf("error formatting video duration: %s", err.Error()),
-								logging.FuncNameAttr(funcName), logging.UserAttr(username))
-							continue
+	// retrieve additional videos info from YouTube videos API
+	maxItems := 50 // YouTube API limit
+	for i := 0; i < len(videoIDs); i += maxItems {
+		end := i + maxItems
+		if end > len(videoIDs) {
+			end = len(videoIDs)
+		}
+		videoIDsChunk := videoIDs[i:end]
+		err = svc.GetVideos(ctx, videoIDsChunk, func(videos *youtube.VideoListResponse) error {
+			// add video duration to each response item
+			for _, item := range videos.Items {
+				dur := item.ContentDetails.Duration
+				if dur != "" {
+					for i, ytChannel := range response {
+						if ytChannel.LatestVideoID == item.Id {
+							formattedDur, err := datetime.FormatISO8601Duration(dur, username)
+							if err != nil {
+								slog.Warn(fmt.Sprintf("error formatting video datetime: %s", err.Error()),
+									logging.FuncNameAttr(funcName), logging.UserAttr(username))
+								continue
+							}
+							response[i].LatestVideoDuration = formattedDur
+							break
 						}
-						response[i].LatestVideoDuration = formattedDur
-						break
 					}
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			slog.Error(fmt.Sprintf("error retrieving videos: %s",
+				err.Error()), logging.FuncNameAttr(funcName), logging.UserAttr(username))
+			return response
 		}
-		return nil
-	})
-	if err != nil {
-		slog.Error(fmt.Sprintf("error retrieving videos: %s",
-			err.Error()), logging.FuncNameAttr(funcName), logging.UserAttr(username))
-		return response
 	}
 
 	// sort results by title

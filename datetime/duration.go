@@ -1,4 +1,4 @@
-package duration
+package datetime
 
 import (
 	"checkYoutube/logging"
@@ -42,8 +42,18 @@ func FormatISO8601Duration(duration, username string) (string, error) {
 	}
 
 	result := strings.Join(parsedValues, ":")
-	if len(result) == 2 {
-		result = "00:" + result
+	lastChar := duration[len(duration)-1]
+	switch lastChar {
+	case 'S':
+		if len(result) == 2 {
+			result = "00:" + result
+		}
+	case 'M':
+		result = result + ":00"
+	case 'H':
+		result = result + ":00:00"
+	default:
+		result = result + string(lastChar)
 	}
 
 	return result, nil
