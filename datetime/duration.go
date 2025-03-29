@@ -47,6 +47,9 @@ func FormatISO8601Duration(duration, username string) (string, error) {
 	case 'S':
 		if len(result) == 2 {
 			result = "00:" + result
+		} else if !strings.Contains(duration, "M") {
+			// fill missing minutes
+			result = result[:len(result)-3] + ":00" + result[len(result)-3:]
 		}
 	case 'M':
 		result = result + ":00"
